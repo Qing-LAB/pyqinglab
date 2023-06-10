@@ -43,11 +43,50 @@ class Datafile:
         data = data.reshape(fig.canvas.get_width_height()[::-1]+(3,))        
         return data
     
-    def save_image(self, key: str, data: np.array):
+    def generate_attr_str(self, attrs: dict, sep: str='\n', eq: str=':') -> str:
+        str_list=[]
+        for k, v in attrs.items():
+            str_list.append(f"{k}{eq}{v}")
+        return sep.join(str_list)
+    
+    def prep_dataset_key(self, name: str, groupkey: str) -> h5py.Dataset:
+        None
+    
+    def save_image(self, name: str, groupkey: str, data: np.array, dimension: tuple, color_channels: str, note: str):
         try:
+            if data.shape != dimension:
+                print("Warning: dimension provided {str(dimension)} is not consistent with image data shape {str(data.shape)}")
             with h5py.File(self.fname, "a") as f:
-                f[key] = data
-                f[key].attrs = "image"
+                if not (groupkey in f.keys()):
+                    f.create_group(groupkey)
+                grp = f[groupkey]
+                if not isinstance(grp, h5py.Group):
+                    raise Exception('Name of group {groupkey} already occupied. Failed to create the group with that name')
+                if (name in grp.keys()) and isinstance(grp[name], h5py.Dataset):
+                    del grp[name]
+                if name in grp.keys():
+                    raise Exception('Cannot overwrite key {name} in group {groupkey} as dataset')
+                dset = grp.create_dataset(name, data=data)
+                dt = h5py.string_dtype(encoding='utf-8')
+                attr_str = np.array(self.generate_attr_str(
+                    {
+                        'type':'image',
+                        'dimensions': str(dimension),
+                        'color_channels': color_channels,
+                        'note': note,
+                    })).astype(dt)
+                dset.attrs.create('created_by_pyqlab', attr_str)
+        except Exception:
+            self.console.print_exception(max_frames=20)
+    
+    def save_string(self, name: str, groupkey: str, data: str, note: str):
+        None
+    
+    def save_variable(self, name: str, groupkey: str, data: np.double, note: str):
+        None
+        
+    def save_nparray(self, name: str, groupkey: str, data: np.array, note: str):
+        None
     
     def save_data(self, data: dict, note: str):
         None
