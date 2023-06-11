@@ -25,6 +25,7 @@ class Datafile:
                     self.console.print("pyqlab_log not exist, will be created now")
                     grp = f.create_group("/pyqlab_log")
                 ct = datetime.datetime.now()
+                ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
                 dataset_name = f"[{ct}] Log INIT"
                 dt = h5py.string_dtype(encoding="utf-8")
                 data = np.array(f"Initiated by operator: [{operator}]").astype(dt)
@@ -49,9 +50,36 @@ class Datafile:
             str_list.append(f"{k}{eq}{v}")
         return sep.join(str_list)
 
-    def prep_dataset_key(self, name: str, groupkey: str) -> h5py.Dataset:
-        None
+    def save_dataset_as(
+        self, data: np.array, name: str, groupkey: str, attr_str: str, overwrite=True
+    ) -> bool:
+        success = False
+        with h5py.File(self.fname, "a") as f:
+            if not (groupkey in f.keys()):
+                f.create_group(groupkey)
+            grp = f[groupkey]
+            if not isinstance(grp, h5py.Group):
+                raise Exception(
+                    "Name of group {groupkey} already occupied. Failed to create the group with that name"
+                )
+            if (name in grp.keys()) and isinstance(grp[name], h5py.Dataset):
+                if overwrite:
+                    del grp[name]
+            if name in grp.keys():
+                raise Exception(
+                    "Cannot overwrite key {name} in group {groupkey} as dataset"
+                )
+            dset = grp.create_dataset(name, data=data)
+            dt = h5py.string_dtype(encoding="utf-8")
+            dset.attrs.create("created_by_pyqlab", np.array(attr_str).astype(dt))
+            success = True
+        return success
 
+    def get_timestamp_now(self) -> str:
+        ct = datetime.datetime.now()
+        ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
+        return ct
+    
     def save_image(
         self,
         name: str,
@@ -60,44 +88,38 @@ class Datafile:
         dimension: tuple,
         color_channels: str,
         note: str,
-    ):
+        overwrite=True,
+    ) -> bool:
         try:
             if data.shape != dimension:
                 print(
                     "Warning: dimension provided {str(dimension)} is not consistent with image data shape {str(data.shape)}"
                 )
-            with h5py.File(self.fname, "a") as f:
-                if not (groupkey in f.keys()):
-                    f.create_group(groupkey)
-                grp = f[groupkey]
-                if not isinstance(grp, h5py.Group):
-                    raise Exception(
-                        "Name of group {groupkey} already occupied. Failed to create the group with that name"
-                    )
-                if (name in grp.keys()) and isinstance(grp[name], h5py.Dataset):
-                    del grp[name]
-                if name in grp.keys():
-                    raise Exception(
-                        "Cannot overwrite key {name} in group {groupkey} as dataset"
-                    )
-                dset = grp.create_dataset(name, data=data)
-                dt = h5py.string_dtype(encoding="utf-8")
-                attr_str = np.array(
-                    self.generate_attr_str(
-                        {
-                            "type": "image",
-                            "dimensions": str(dimension),
-                            "color_channels": color_channels,
-                            "note": note,
-                        }
-                    )
-                ).astype(dt)
-                dset.attrs.create("created_by_pyqlab", attr_str)
+            ct = self.get_timestamp_now()
+            attr_str =            self.generate_attr_str(
+                    {
+                        "type": "image",
+                        "dimensions": str(dimension),
+                        "color_channels": color_channels,
+                        "timestamp": ct,
+                        "note": note,
+                    }
+            return self.save_dataset_as(data, name, groupkey, attr_str, overwrite=overwrite)
         except Exception:
             self.console.print_exception(max_frames=20)
+        finally:
+            None
 
-    def save_string(self, name: str, groupkey: str, data: str, note: str):
-        dt = h5py.string_dtype(encode="byte")
+    def save_string(self, name: str, groupkey: str, data: str, note: str, encode='utf-8') -> bool:
+        dt = h5py.string_dtype(encode=encode)
+        ct = self.get_timestamp_now()
+        d = np.fromstring(data).astype(dt)
+        attr_str = self.generate_attr_str(
+                "type":"str",
+                "timestamp": ct,
+                "note": note,
+        )
+        self.save_dataset_as(d, name, groupkey, attr_str, overwrite=overwrite)
 
     def save_variable(self, name: str, groupkey: str, data: np.double, note: str):
         None
