@@ -79,7 +79,7 @@ class Datafile:
         ct = datetime.datetime.now()
         ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
         return ct
-    
+
     def save_image(
         self,
         name: str,
@@ -96,28 +96,35 @@ class Datafile:
                     "Warning: dimension provided {str(dimension)} is not consistent with image data shape {str(data.shape)}"
                 )
             ct = self.get_timestamp_now()
-            attr_str =            self.generate_attr_str(
-                    {
-                        "type": "image",
-                        "dimensions": str(dimension),
-                        "color_channels": color_channels,
-                        "timestamp": ct,
-                        "note": note,
-                    }
-            return self.save_dataset_as(data, name, groupkey, attr_str, overwrite=overwrite)
+            attr_str = self.generate_attr_str(
+                {
+                    "type": "image",
+                    "dimensions": str(dimension),
+                    "color_channels": color_channels,
+                    "timestamp": ct,
+                    "note": note,
+                }
+            )
+            return self.save_dataset_as(
+                data, name, groupkey, attr_str, overwrite=overwrite
+            )
         except Exception:
             self.console.print_exception(max_frames=20)
         finally:
             None
 
-    def save_string(self, name: str, groupkey: str, data: str, note: str, encode='utf-8') -> bool:
+    def save_string(
+        self, name: str, groupkey: str, data: str, note: str, encode="utf-8"
+    ) -> bool:
         dt = h5py.string_dtype(encode=encode)
         ct = self.get_timestamp_now()
         d = np.fromstring(data).astype(dt)
         attr_str = self.generate_attr_str(
-                "type":"str",
+            {
+                "type": "str",
                 "timestamp": ct,
                 "note": note,
+            }
         )
         self.save_dataset_as(d, name, groupkey, attr_str, overwrite=overwrite)
 
