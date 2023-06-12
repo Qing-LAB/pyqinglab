@@ -308,3 +308,25 @@ def label_data(data_for_predict, data_for_label, model, plot=True, cmap_name='je
         plt.show()
     
     return (df, md)
+
+def get_category_lifetime(labelled_data: np.array, t: np.array, categories: np.array, index: int) -> np.array:
+    category = categories[index]
+    mask1 = labelled_data == category
+    mask1 = np.insert(mask1, mask1.size, False)
+    if mask1[0]:
+        mask1 = np.insert(mask1, 0, False)
+        mask2 = mask1[:-1] ^ mask1[1:]
+    else:
+        mask2 = mask1[:-1] ^ mask1[1:]
+        mask2 = np.insert(mask2, 0, False)
+    t1 = np.insert(t, t.size, t[-1]+t[-1]-t[-2])
+    print(labelled_data)
+    print(t1)
+    print(mask1)
+    print(mask2)
+    intervals = np.diff(t1[mask2])
+    if mask2[0]:
+        return intervals[::2]
+    else:
+        return intervals[1::2]
+
