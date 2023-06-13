@@ -9,14 +9,14 @@ from kneed import KneeLocator
 import pandas as pd
 import IPython.display as display
 
-def butter_lowpass(cutoff, fs, order=5):
+def filterdesign_lowpass_butterfly(cutoff, fs, order=5):
     nyq = 0.5 * fs
     normal_cutoff = cutoff / nyq
     b, a = butter(order, normal_cutoff, btype='low', analog=False)
     return b, a
 
-def butter_lowpass_filtfilt(data, cutoff, fs, order=5):
-    b, a = butter_lowpass(cutoff, fs, order=order)
+def lowpass_butterfly(data, cutoff, fs, order=5):
+    b, a = filterdesign_lowpass_butterfly(cutoff, fs, order=order)
     y = filtfilt(b, a, data)
     return y
 
@@ -252,7 +252,7 @@ def plot_GMMmodel(data, M_best, bins=100, embed_plot=False, show_AIC_BIC=True):
         plt.show()
         fig.canvas.draw()
 
-def label_data(data_for_predict, data_for_label, model, plot=True, cmap_name='jet'):
+def label_data_with_model(data_for_predict, data_for_label, model, plot=True, cmap_name='jet'):
     N=len(model.means_)
     print(f"total # of components: {N}")
     
@@ -309,7 +309,7 @@ def label_data(data_for_predict, data_for_label, model, plot=True, cmap_name='je
     
     return (df, md)
 
-def get_category_lifetime(labelled_data: np.array, t: np.array, categories: np.array, index: int) -> np.array:
+def get_event_lifetime(labelled_data: np.array, t: np.array, categories: np.array, index: int) -> np.array:
     category = categories[index]
     mask1 = labelled_data == category
     mask1 = np.insert(mask1, mask1.size, False)

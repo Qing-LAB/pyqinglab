@@ -7,6 +7,56 @@ from matplotlib.figure import Figure
 from PIL import Image
 from pathlib import Path
 from pathlib import PurePath
+import pandas as pd
+
+def fig2nparray(fig: Figure, dpi: int = 300) -> np.array:
+    """
+    convert matplotlib figure into an image object saved as numpy array
+    fig: the handle of the figure
+    dpi: the dpi of the image, default is 300 DPI
+    return: numpy array of dtype uint8, containing all the data of the image
+    
+    example:
+    
+    a = np.linspace(0, 100, 100)
+    b = a*a
+    fig = plt.plot(a, b)
+    plot.close()
+    img = fig2nparray(fig, dpi=600)
+    
+    """
+    fig.tight_layout(pad=0)
+    fig.set_dpi(dpi)
+    fig.canvas.draw()
+    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    return data
+
+def generate_attr_str(attrs: dict, sep: str = "\n", eq: str = ":") -> str:
+    """
+    generate a string that contains all attributes with the format key : value \\n
+    where the ':' and the \\n are the equal sign and the separator, respectively, 
+    which can be changed by the parameters
+
+    attrs: dictionary containing pairs of name and property as attributes for saving
+    sep: string as separator between each pair of attribute
+    eq: string as equal sign between the key name and the property
+    return: string containing all attributes as formatted
+    """
+    str_list = []
+    for k, v in attrs.items():
+        str_list.append(f"{k}{eq}{v}")
+    return sep.join(str_list)
+
+def get_timestamp_now() -> str:
+    """
+    generate a string as the timestamp for the current time
+    replaces : with _, and replaces space/blank with _ so that the string is a continuous 
+    string with no special charcters
+    """
+    ct = datetime.datetime.now()
+    ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
+    return ct
 
 class Datafile:
     def __init__(self, fname: str, operator: str = 'unknown', root_group='/', note: str = ''):
@@ -14,51 +64,13 @@ class Datafile:
         self.root_group = root_group
         self.console = Console()
 
-        ct = Datafile.get_timestamp_now()
+        ct = get_timestamp_now()
         dataset_name = f"LogINIT[{ct}]"
         dt = h5py.string_dtype(encoding="utf-8")
         data = np.array(f"Initiated by operator: [{operator}]. Note: [{note}]").astype(dt)
         self.save_as_dataset(data, dataset_name, '/pyqlab_log', '', overwrite=True)
 
-    @staticmethod
-    def fig2nparray(fig: Figure, dpi: int = 300) -> np.array:
-        """
-        convert matplotlib figure into an image object saved as numpy array
-        fig: the handle of the figure
-        dpi: the dpi of the image, default is 300 DPI
-        return: numpy array of dtype uint8, containing all the data of the image
-        """
-        fig.tight_layout(pad=0)
-        fig.set_dpi(dpi)
-        fig.canvas.draw()
-        data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        return data
-
-    @staticmethod
-    def generate_attr_str(attrs: dict, sep: str = "\n", eq: str = ":") -> str:
-        """
-        generate a string that contains all attributes with the format key : value \\n
-        where the ':' and the \\n are the equal sign and the separator, respectively, 
-        which can be changed by the parameters
-
-        attrs: dictionary containing pairs of name and property as attributes for saving
-        sep: string as separator between each pair of attribute
-        eq: string as equal sign between the key name and the property
-        return: string containing all attributes as formatted
-        """
-        str_list = []
-        for k, v in attrs.items():
-            str_list.append(f"{k}{eq}{v}")
-        return sep.join(str_list)
-
-    @staticmethod
-    def get_timestamp_now() -> str:
-        ct = datetime.datetime.now()
-        ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
-        return ct
-
-    def create_group(self, groupname: str, parentkey: str, note:str) -> bool:
+    def create_group(self, groupname: str, parentkey: str, note:str, grouptype: str="") -> bool:
         success = False
         p = PurePath(self.root_group, parentkey, groupname)
         parent_key = p.parent
@@ -73,11 +85,12 @@ class Datafile:
             
                 if isinstance(parent, h5py.Datagroup):
                     grp = parent.create_group(grp_key)
-                    ct = Datafile.get_timestamp_now()
+                    ct = get_timestamp_now()
                     attr_str = Datafile.generate_attr_str(
                         {
                             "timestamp": ct,
                             "note": note,
+                            "grouptype": grouptype,
                         }
                     )
                     success = True
@@ -134,7 +147,7 @@ class Datafile:
                 print(
                     "Warning: dimension provided {str(dimension)} is not consistent with image data shape {str(data.shape)}"
                 )
-            ct = Datafile.get_timestamp_now()
+            ct = get_timestamp_now()
             attr_str = Datafile.generate_attr_str(
                 {
                     "type": "image",
@@ -160,7 +173,7 @@ class Datafile:
         overwrite=True,
     ) -> bool:
         dt = h5py.string_dtype(encode=encode)
-        ct = self.get_timestamp_now()
+        ct = get_timestamp_now()
         d = np.fromstring(data).astype(dt)
         attr_str = Datafile.generate_attr_str(
             {
@@ -172,7 +185,7 @@ class Datafile:
         self.save_as_dataset(d, name, groupkey, attr_str, overwrite=overwrite)
 
     def save_variable(self, name: str, groupkey: str, data: np.double, note: str, typestr="double"):
-        ct = Datafile.get_timestamp_now()
+        ct = get_timestamp_now()
         attr_str = Datafile.generate_attr_str(
             {
                 "typestr": typestr,
@@ -183,7 +196,7 @@ class Datafile:
         self.save_as_dataset(data, name, groupkey, attr_str)
 
     def save_nparray(self, name: str, groupkey: str, data: np.array, note: str):
-        ct = Datafile.get_timestamp_now()
+        ct = get_timestamp_now()
         attr_str = Datafile.generate_attr_str(
             {
                 "timestamp": ct,
@@ -192,17 +205,25 @@ class Datafile:
         )
         self.save_as_dataset(data, name, groupkey, attr_str)
 
-    # def save_hierarchy_data(self, data: dict, groupkey: str):
-    #     for k, v in enumerate(data):
-    #         if isinstance(v, dict):
-    #             self.save_hierarchy_data(v, grp_key)
-    #         else:
-    #             match type(v):
-    #                 case int:
-    #                     None
-    #                 case double:
-    #                     None
-    #                 case str:
-    #                     None
-    #                 case np.array:
-    #                     None
+    def save_dataframe(self, name: str, groupkey: str, df: pd.DataFrame, note: str):
+        ct = get_timestamp_now()
+        
+        success = False
+        p = PurePath(groupkey, name)
+        if self.create_group(p, '/', note=note, grouptype='DataFrame'):
+            df.to_hdf(self.fname, p, 'r+')
+        
+    def save_data_hierarchy(self, data: dict, groupkey: str):
+        for k, v in enumerate(data):
+            if isinstance(v, dict):
+                self.save_hierarchy_data(v, grp_key)
+            else:
+                match type(v):
+                    case int:
+                        None
+                    case double:
+                        None
+                    case str:
+                        None
+                    case np.array:
+                        None

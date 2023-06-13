@@ -12,9 +12,16 @@ from collections import namedtuple
 Datanode = namedtuple("Datanode", "fname path id type data attrs group_list dataset_list unknown_list")
 
 class Dataset(UserDict):
-    """Class to handle a hdf5 data set"""
+    """
+    - Read from a hdf5 data set, and keep information of the structure
+    - Provide a consistent way to read from HDF5, and only read data that is requested by a correct key
+
+    """
     
     def __init__(self, fname):
+        """
+        will read from hdf5 and update a tree structure to represent how data are stored
+        """
         self.console = Console()
         self.fname = fname
         self.dsCount = 0
