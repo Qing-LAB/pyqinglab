@@ -58,7 +58,16 @@ def get_timestamp_now() -> str:
     ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
     return ct
 
+def test_import():
+    return 1
+    
 class Datafile:
+    """
+    Datafile will only be used to write to/update HDF5 files. Every operation will be completed with the file closed properly.
+    Data saving will be logged with time stamp
+    Notes will be added to the variables
+    
+    """
     def __init__(self, fname: str, operator: str = 'unknown', root_group='/', note: str = ''):
         self.fname = fname
         self.root_group = root_group
