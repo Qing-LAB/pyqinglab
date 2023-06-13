@@ -4,6 +4,7 @@ import sklearn
 from sklearn import mixture
 import scipy.stats as stats
 import matplotlib as mpl
+From matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 from kneed import KneeLocator
@@ -98,8 +99,6 @@ def get_AIC_score(model: GMModel, X):
 
 def fit_GMM(
     data: np.array,
-    startx: int,
-    length: int,
     method="gaussian",
     max_components: int = 4,
     max_iter: int = 100,
@@ -109,13 +108,31 @@ def fit_GMM(
     model_eval: str = "BIC",
     tol: float = 1e-3,
 ):
-    section = data[startx : startx + length].reshape(-1, 1)
+    """
+    INPUT:
+    data: numpy array of raw sequence, dimension will be ignored by reshape(-1, 1)
+    method: can be either 'gaussian' or 'bayesian' to use standard GaussianMixture, or use BayesianGaussianMixture
+    max_components: the maximum component that this function will try, depends on the model_eval, 
+    this can be the only thing evaluated, or the function will evaluate from N=1 up to N=max_components, and find the best
+    one fit using the standard given by model_eval
+    init: initial values, default is "k-means++"
+    verbose: level of output. set to zero will only show progress bar. Set to negative will give zero output (the GaussianMixture and BayesianGaussianMixture may give some output). 
+    Positive number will be used to set the verbose output for the mixture model called. Set verbose >= 10 will plot figures of the histogram and how the models fit
+    knee_sensitivity: sensitivity of detecting the knee point of the evaluation method for the models.
+    model_eval: method to evaluate which model of different #components fit the data best. Choice can be 'AIC', 'BIC' and 'single'. 
+    If it is set to single, the function will only try to fit once with components set to max_components
+    tol: threshold for deciding if model fitting has converged
+
+    RETURN:
+    a dictionary containing: 'best_model', 'all_evaluated_models', and 'best_model_index'
+
+    """
+    sequence = data.reshape(-1, 1)
     N = np.arange(1, max_components + 1)
     models = [None for i in range(len(N))]
 
-    if verbose > 1:
-        fig = plt.figure()
-
+    AIC=[]
+    BIC=[]
     match method:
         case "gaussian":
             if model_eval == "AIC" or model_eval == "BIC":
@@ -131,31 +148,29 @@ def fit_GMM(
                         verbose=0 if verbose < 0 else verbose,
                         tol=tol,
                         init_params=init,
-                    ).fit(section)
-                    if verbose > 1:
-                        fig.clf()
-                        plot_GMMmodel(section, models[i], show_AIC_BIC=False)
-                        fig.canvas.draw()
-                        display.display(plt.gcf())
+                    ).fit(sequence)
+                    if verbose >= 10:
+                        fig = plt.figure()
+                        plot_GMMmodel(sequence, models[i], fig, show_AIC_BIC=False)
+                        plt.show()
+                        display.display(fig)
 
-                AIC = [m.aic(section) for m in models]
-                BIC = [m.bic(section) for m in models]
-            elif model_eval == "FIXED":
-                AIC = None
-                BIC = None
+                AIC = [m.aic(sequence) for m in models]
+                BIC = [m.bic(sequence) for m in models]
+            else:
                 M_best = mixture.GaussianMixture(
                     n_components=max_components,
                     covariance_type="full",
                     max_iter=max_iter,
                     verbose=0 if verbose < 0 else verbose,
                     init_params=init,
-                ).fit(section)
+                ).fit(sequence)
                 models = [M_best]
-                if verbose > 1:
-                    fig.clf()
-                    plot_GMMmodel(section, M_best, embed_plot=True, show_AIC_BIC=False)
-                    fig.canvas.draw()
-                    display.display(plt.gcf())
+                if verbose >= 10:
+                    fig = plt.figure()
+                    plot_GMMmodel(sequence, M_best, fig, show_AIC_BIC=False)
+                    plt.show()
+                    display.display(fig)
 
         case "bayesian":
             if model_eval == "AIC" or model_eval == "BIC":
@@ -171,20 +186,18 @@ def fit_GMM(
                         verbose=0 if verbose < 0 else verbose,
                         tol=tol,
                         init_params=init,
-                    ).fit(section)
-                    if verbose > 1:
-                        fig.clf()
+                    ).fit(sequence)
+                    if verbose >= 10:
+                        fig = plt.figure()
                         plot_GMMmodel(
-                            section, models[i], embed_plot=True, show_AIC_BIC=False
+                            sequence, models[i], fig, show_AIC_BIC=False
                         )
-                        fig.canvas.draw()
-                        display.display(plt.gcf())
+                        plt.show()
+                        display.display(fig)
 
-                AIC = [get_AIC_score(m, section) for m in models]
-                BIC = [get_BIC_score(m, section) for m in models]
-            elif model_eval == "FIXED":
-                AIC = None
-                BIC = None
+                AIC = [get_AIC_score(m, sequence) for m in models]
+                BIC = [get_BIC_score(m, sequence) for m in models]
+            else:
                 M_best = mixture.BayesianGaussianMixture(
                     n_components=max_components,
                     covariance_type="full",
@@ -192,16 +205,15 @@ def fit_GMM(
                     verbose=0 if verbose < 0 else verbose,
                     tol=tol,
                     init_params=init,
-                ).fit(section)
+                ).fit(sequence)
                 models = [M_best]
-                if verbose > 1:
-                    fig.clf()
-                    plot_GMMmodel(section, M_best, embed_plot=True, show_AIC_BIC=False)
+                if verbose >= 10:
+                    fig = plt.figure()
+                    plot_GMMmodel(sequence, M_best, fig, show_AIC_BIC=False)
                     plt.show()
-                    fig.canvas.draw()
-                    display.display(plt.gcf())
+                    display.display(fig)
         case _:
-            raise Exception("unknown method set for fitting")
+            raise Exception("Unknown method set for modeling. Please use 'gaussian' or 'bayesian'.")
 
     knee_detection = False
     best_idx = 0
@@ -213,10 +225,10 @@ def fit_GMM(
         case "BIC":
             MDL_EVAL = BIC
             knee_detection = True
-        case "FIXED":
-            None
+        case "single":
+            MDL_EVAL = [0]
         case _:
-            raise Exception("unknown method evaluation method")
+            raise Exception("Unknown method evaluation method, please use 'AIC', 'BIC' or 'single'.")
 
     if knee_detection:
         knee_point = KneeLocator(
@@ -231,13 +243,13 @@ def fit_GMM(
         if knee_point.knee:
             if verbose > 1:
                 print(
-                    f"model evaluation curve knee point found at: {N[knee_point.knee]}"
+                    f"Model evaluation curve knee point found at: {N[knee_point.knee]}"
                 )
             best_idx = knee_point.knee
         else:
             if verbose > 1:
                 print(
-                    f"model evaluation curve no knee point found, choosing the minimum point {np.argmin(MDL_EVAL)}"
+                    f"No knee point can be identified, using the minimum point {np.argmin(MDL_EVAL)}"
                 )
             best_idx = np.argmin(MDL_EVAL)
 
@@ -252,15 +264,21 @@ def fit_GMM(
 
 
 def plot_GMMmodel(
-    data: np.array, model: GMModel, bins=100, embed_plot=False, show_AIC_BIC=True
+    data: np.array, model: GMModel, fig: Figure=None, bins=100, show_AIC_BIC=True
 ):
+    """
+    plot the model together with the histogram of the data
+    if show_AIC_BIC is set, will plot also the AIC and BIC values of all models evaluated in previous call to fit_GMM
+    """
     x = np.linspace(np.min(data), np.max(data), data.size)
     x_axis = data.copy()
     x_axis.sort()
+    active_show = False
 
-    if not embed_plot:
+    if fig is None:
         fig = plt.figure()
         fig.clf()
+        active_show = True
 
     if show_AIC_BIC:
         plt.subplot(2, 1, 1)
@@ -274,9 +292,6 @@ def plot_GMMmodel(
     plt.plot(x, pdf, "-k")
     plt.plot(x, pdf_individual, "--k")
 
-    if not embed_plot:
-        plt.subplot(2, 1, 2)
-
     if show_AIC_BIC and hasattr(model, "AIC") and hasattr(model, "BIC"):
         plt.subplot(2, 1, 2)
         if model.AIC:
@@ -286,16 +301,16 @@ def plot_GMMmodel(
             N = np.arange(1, len(model.BIC) + 1)
             plt.plot(N, model.BIC, "--k", label="BIC")
 
-    if not embed_plot:
+    if active_show:
         plt.show()
-        fig.canvas.draw()
+        display.display(fig)
 
 
 def label_data_with_model(
     data_for_predict: np.array,
     data_for_label: np.array,
     model: GMModel,
-    plot: bool = True,
+    plot: bool = False,
     cmap_name: str = "jet",
 ):
     N = len(model.means_)
@@ -367,7 +382,7 @@ def get_event_timing(labelled_events: np.array, label: int) -> np.array:
     on/off index list so that the "on" events at the beginning and end will be correctly calculated.
 
     Example:
-    
+
     """
     mask1 = labelled_events.astype(int) == label
     mask1 = np.insert(mask1, 0, False)
