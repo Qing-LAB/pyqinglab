@@ -415,15 +415,18 @@ def get_event_timing(labelled_events: np.array, label: int) -> np.array:
 def fit_GMM_bysection(data: np.array, window: int, step: int, max_components: int, model_ref: GMModel, tol:float = 1e-3, method: str='gaussian', model_eval: str='BIC', init: str='k-means++', max_iter:int = 500):
     d = data.reshape(-1, 1)
     steprange = np.arange(0, d.size//step)
+    means_buf = np.zeros(steprange.size*max_components, dtype=np.float)
+    sigma_buf = means_buf.copy()
+    buf_count=0
     startpts = steprange*window
     endpts = startpts + window
     
-    for b, e in tdqm(zip(startpts, endpts)):
+    for b, e in tqdm(zip(startpts, endpts)):
         if e > d.size:
             e = d.size
         section = d[b:e]
         mdl = fit_GMM(
-                data: np.array,
+                section,
                 method=method,
                 max_components=max_components,
                 max_iter=max_iter,
@@ -431,5 +434,15 @@ def fit_GMM_bysection(data: np.array, window: int, step: int, max_components: in
                 verbose=-1,
                 model_eval=model_eval,
                 tol=tol)
+        means = mdl['best_model'].means_.ravel()
+        sigma = np.sqrt(mdl['best_model'].covariances_.ravel())
+
+        means_buf[buf_count:buf_count+means.size]=means[:]
+        sigma_buf[buf_count:buf_count+means.size]=sigma[:]
+        buf_count+=means.size
+    
+    return (means_buf, sigma_buf)
+
+
         
     
