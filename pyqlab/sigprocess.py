@@ -4,7 +4,7 @@ import sklearn
 from sklearn import mixture
 import scipy.stats as stats
 import matplotlib as mpl
-From matplotlib.figure import Figure
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 from kneed import KneeLocator
@@ -104,7 +104,7 @@ def fit_GMM(
     max_iter: int = 100,
     init: str = "k-means++",
     verbose: int = 0,
-    knee_sensitivity: int = 1,
+    knee_sensitivity: int = 3,
     model_eval: str = "BIC",
     tol: float = 1e-3,
 ):
@@ -152,7 +152,7 @@ def fit_GMM(
                     if verbose >= 10:
                         fig = plt.figure()
                         plot_GMMmodel(sequence, models[i], fig, show_AIC_BIC=False)
-                        plt.show()
+                        plt.close()
                         display.display(fig)
 
                 AIC = [m.aic(sequence) for m in models]
@@ -169,7 +169,7 @@ def fit_GMM(
                 if verbose >= 10:
                     fig = plt.figure()
                     plot_GMMmodel(sequence, M_best, fig, show_AIC_BIC=False)
-                    plt.show()
+                    plt.close()
                     display.display(fig)
 
         case "bayesian":
@@ -192,7 +192,7 @@ def fit_GMM(
                         plot_GMMmodel(
                             sequence, models[i], fig, show_AIC_BIC=False
                         )
-                        plt.show()
+                        plt.close()
                         display.display(fig)
 
                 AIC = [get_AIC_score(m, sequence) for m in models]
@@ -210,7 +210,7 @@ def fit_GMM(
                 if verbose >= 10:
                     fig = plt.figure()
                     plot_GMMmodel(sequence, M_best, fig, show_AIC_BIC=False)
-                    plt.show()
+                    plt.close()
                     display.display(fig)
         case _:
             raise Exception("Unknown method set for modeling. Please use 'gaussian' or 'bayesian'.")
@@ -230,26 +230,34 @@ def fit_GMM(
         case _:
             raise Exception("Unknown method evaluation method, please use 'AIC', 'BIC' or 'single'.")
 
+    min_detection = False
+    
     if knee_detection:
-        knee_point = KneeLocator(
-            x=N,
-            y=MDL_EVAL,
-            S=knee_sensitivity,
-            curve="convex",
-            direction="decreasing",
-            online=False,
-        )
-
-        if knee_point.knee:
-            if verbose > 1:
-                print(
-                    f"Model evaluation curve knee point found at: {N[knee_point.knee]}"
-                )
-            best_idx = knee_point.knee
+        if knee_sensitivity*2 < max_components:
+            knee_point = KneeLocator(
+                x=N,
+                y=MDL_EVAL,
+                S=knee_sensitivity,
+                curve="convex",
+                direction="decreasing",
+                online=False,
+            )
+            if knee_point.knee:
+                if verbose > 1:
+                    print(
+                        f"Model evaluation curve knee point found at: {N[knee_point.knee]}"
+                    )
+                best_idx = knee_point.knee
+            else:
+                min_detection = True
         else:
+            min_detection = True
+
+       
+        if min_detection:
             if verbose > 1:
                 print(
-                    f"No knee point can be identified, using the minimum point {np.argmin(MDL_EVAL)}"
+                    f"Using the minimum point {np.argmin(MDL_EVAL)} as best model"
                 )
             best_idx = np.argmin(MDL_EVAL)
 
@@ -277,7 +285,6 @@ def plot_GMMmodel(
 
     if fig is None:
         fig = plt.figure()
-        fig.clf()
         active_show = True
 
     if show_AIC_BIC:
@@ -302,7 +309,7 @@ def plot_GMMmodel(
             plt.plot(N, model.BIC, "--k", label="BIC")
 
     if active_show:
-        plt.show()
+        plt.close()
         display.display(fig)
 
 
@@ -365,7 +372,8 @@ def label_data_with_model(
         plt.subplot(1, 4, (2, 4))
         plt.plot(np.arange(0, data_for_predict.size), data_for_predict, "-k", alpha=0.5)
         plt.scatter(np.arange(0, data_for_label.size), data_for_label, c=colors, s=1)
-        plt.show()
+        plt.close()
+        display.display(fig)
 
     return (df, md)
 
@@ -404,5 +412,24 @@ def get_event_timing(labelled_events: np.array, label: int) -> np.array:
     }
 
 
-def fit_GMM_bysection(data: np.array, model):
-    None
+def fit_GMM_bysection(data: np.array, window: int, step: int, max_components: int, model_ref: GMModel, tol:float = 1e-3, method: str='gaussian', model_eval: str='BIC', init: str='k-means++', max_iter:int = 500):
+    d = data.reshape(-1, 1)
+    steprange = np.arange(0, d.size//step)
+    startpts = steprange*window
+    endpts = startpts + window
+    
+    for b, e in tdqm(zip(startpts, endpts)):
+        if e > d.size:
+            e = d.size
+        section = d[b:e]
+        mdl = fit_GMM(
+                data: np.array,
+                method=method,
+                max_components=max_components,
+                max_iter=max_iter,
+                init=init,
+                verbose=-1,
+                model_eval=model_eval,
+                tol=tol)
+        
+    
