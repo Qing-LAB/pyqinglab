@@ -104,7 +104,7 @@ def fit_GMM(
     max_iter: int = 100,
     init: str = "k-means++",
     verbose: int = 0,
-    knee_sensitivity: int = 3,
+    knee_sensitivity: int = 2,
     model_eval: str = "BIC",
     tol: float = 1e-3,
 ):
@@ -151,7 +151,7 @@ def fit_GMM(
                     ).fit(sequence)
                     if verbose >= 10:
                         fig = plt.figure()
-                        plot_GMMmodel(sequence, models[i], fig, show_AIC_BIC=False)
+                        plot_GMModel(sequence, models[i], fig, show_AIC_BIC=False)
                         plt.close()
                         display.display(fig)
 
@@ -168,7 +168,7 @@ def fit_GMM(
                 models = [M_best]
                 if verbose >= 10:
                     fig = plt.figure()
-                    plot_GMMmodel(sequence, M_best, fig, show_AIC_BIC=False)
+                    plot_GMModel(sequence, M_best, fig, show_AIC_BIC=False)
                     plt.close()
                     display.display(fig)
 
@@ -189,7 +189,7 @@ def fit_GMM(
                     ).fit(sequence)
                     if verbose >= 10:
                         fig = plt.figure()
-                        plot_GMMmodel(
+                        plot_GMModel(
                             sequence, models[i], fig, show_AIC_BIC=False
                         )
                         plt.close()
@@ -209,7 +209,7 @@ def fit_GMM(
                 models = [M_best]
                 if verbose >= 10:
                     fig = plt.figure()
-                    plot_GMMmodel(sequence, M_best, fig, show_AIC_BIC=False)
+                    plot_GMModel(sequence, M_best, fig, show_AIC_BIC=False)
                     plt.close()
                     display.display(fig)
         case _:
@@ -271,7 +271,7 @@ def fit_GMM(
     }
 
 
-def plot_GMMmodel(
+def plot_GMModel(
     data: np.array, model: GMModel, fig: Figure=None, bins=100, show_AIC_BIC=True
 ):
     """
@@ -319,6 +319,7 @@ def label_data_with_model(
     model: GMModel,
     plot: bool = False,
     cmap_name: str = "jet",
+    marker_base_size: int = 20,
 ):
     N = len(model.means_)
     print(f"total # of components: {N}")
@@ -365,13 +366,13 @@ def label_data_with_model(
         fig.set_figwidth(w)
 
         dotsize = np.sqrt(model.covariances_.ravel())
-        dotsize = dotsize / np.min(dotsize) * 20
+        dotsize = dotsize / np.min(dotsize) * marker_base_size
         plt.subplot(1, 4, 1)
         plt.scatter(categorylabels_sorted, m, c=legend_color, s=dotsize)
 
         plt.subplot(1, 4, (2, 4))
         plt.plot(np.arange(0, data_for_predict.size), data_for_predict, "-k", alpha=0.5)
-        plt.scatter(np.arange(0, data_for_label.size), data_for_label, c=colors, s=1)
+        plt.scatter(np.arange(0, data_for_label.size), data_for_label, c=colors, s=marker_base_size)
         plt.close()
         display.display(fig)
 
@@ -412,20 +413,36 @@ def get_event_timing(labelled_events: np.array, label: int) -> np.array:
     }
 
 
-def fit_GMM_bysection(data: np.array, window: int, step: int, max_components: int, model_ref: GMModel, tol:float = 1e-3, method: str='gaussian', model_eval: str='BIC', init: str='k-means++', max_iter:int = 500):
+def sectionfit_GMM(data: np.array, 
+                      window: int, 
+                      step: int, 
+                      max_components: int=3, 
+                      tol:float = 1e-3, 
+                      method: str='gaussian', 
+                      model_eval: str='AIC', 
+                      init: str='k-means++', 
+                      max_iter:int = 500,
+                      knee_sensitivity = 2):
     d = data.reshape(-1, 1)
+    
     steprange = np.arange(0, d.size//step)
-    means_buf = np.zeros(steprange.size*max_components, dtype=np.float)
+    means_buf = np.zeros(steprange.size*max_components, dtype=float)
     sigma_buf = means_buf.copy()
     buf_count=0
-    startpts = steprange*window
-    endpts = startpts + window
-    
-    for b, e in tqdm(zip(startpts, endpts)):
+    startpts = (steprange * window).astype(int)
+    idx = startpts < d.size
+    startpts = startpts[idx]
+    endpts = (startpts + window).astype(int)
+    mdls = [None for i in startpts]
+    fig = None
+    pbar = tqdm(np.arange(0, startpts.size), desc="Section fit with GaussianMixture:")
+    for i in pbar:
+        b=startpts[i]
+        e=endpts[i]
         if e > d.size:
             e = d.size
         section = d[b:e]
-        mdl = fit_GMM(
+        mdls[i] = fit_GMM(
                 section,
                 method=method,
                 max_components=max_components,
@@ -433,15 +450,64 @@ def fit_GMM_bysection(data: np.array, window: int, step: int, max_components: in
                 init=init,
                 verbose=-1,
                 model_eval=model_eval,
+                knee_sensitivity = knee_sensitivity,
                 tol=tol)
-        means = mdl['best_model'].means_.ravel()
-        sigma = np.sqrt(mdl['best_model'].covariances_.ravel())
+        means = mdls[i]['best_model'].means_.ravel()
+        sigma = np.sqrt(mdls[i]['best_model'].covariances_.ravel())
 
         means_buf[buf_count:buf_count+means.size]=means[:]
         sigma_buf[buf_count:buf_count+means.size]=sigma[:]
         buf_count+=means.size
+        steprange[i]=means.size
+        pbar.set_description(f"Section fit with GaussianMixture: last found [{means.size}] components:")
+        
+    return {
+        "means": means_buf[:buf_count],
+        "sigma": sigma_buf[:buf_count],
+        "number_of_components": steprange[:i],
+        "models": mdls,
+        "window_size": window,
+        "step_size": step,
+        "start_points":startpts,
+        "end_points":endpts,
+    }
+
+def label_sectional_means(section_fit_output, max_components, max_iter, tol, model_eval):
+    print("Fitting all means by a Gaussian model")
+    all_means=section_fit_output['means']
+    means_model=fit_GMM(all_means, 
+                        max_components=max_components, 
+                        max_iter=max_iter, 
+                        tol=tol, 
+                        verbose=-1, 
+                        model_eval=model_eval)
     
-    return (means_buf, sigma_buf)
+    return means_model
+
+def section_label_data_with_global_model(data, output, global_model):
+    pbar = tqdm(np.arange(0, output["start_points"].size),
+                desc="Going through data again to label with the overall distribution of means")
+    d = data.reshape(-1, 1)
+    labelled_data = np.zeros(d.size, dtype=int)
+    labelled_data_value = np.zeros(d.size, dtype=float)
+    
+    for i in pbar:
+        b=output["start_points"][i]
+        e=output["end_points"][i]
+        if e > d.size:
+            e = d.size
+        section = d[b:e]
+        section_model = output["models"][i]['best_model']
+        means = section_model.means_.ravel()
+        means_label = global_model.predict(means.reshape(-1, 1))
+        data_label_orig = section_model.predict(section.reshape(-1, 1))
+        data_label = [means_label[i] for i in data_label_orig]
+        data_label_value = [global_model.means_.ravel()[i] for i in data_label]
+        labelled_data[b:e] = data_label[:]
+        labelled_data_value[b:e] = data_label_value[:]
+    
+    return { "labelled_data": labelled_data,
+            "labelled_data_value": labelled_data_value}
 
 
         
