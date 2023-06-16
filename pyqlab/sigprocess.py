@@ -97,7 +97,7 @@ def get_AIC_score(model: GMModel, X):
     return base_score + type_score * 2
 
 
-def fit_GMM(
+def fit_GMModel(
     data: np.array,
     method="gaussian",
     max_components: int = 4,
