@@ -9,7 +9,10 @@ from rich.console import Console
 from collections import UserDict
 from collections import namedtuple
 
-Datanode = namedtuple("Datanode", "fname path id type data attrs group_list dataset_list unknown_list")
+Datanode = namedtuple(
+    "Datanode", "fname path id type data attrs group_list dataset_list unknown_list"
+)
+
 
 class Dataset(UserDict):
     """
@@ -17,7 +20,7 @@ class Dataset(UserDict):
     - Provide a consistent way to read from HDF5, and only read data that is requested by a correct key
 
     """
-    
+
     def __init__(self, fname):
         """
         will read from hdf5 and update a tree structure to represent how data are stored
@@ -26,7 +29,7 @@ class Dataset(UserDict):
         self.fname = fname
         self.dsCount = 0
         self.update_dstree()
-    
+
     def _walk_ds(self, ds: Union[h5py.File, h5py.Dataset], tree: Tree) -> None:
         paths = sorted(ds.keys())
 
@@ -37,33 +40,33 @@ class Dataset(UserDict):
                 branch = tree.add(
                     f"[bold magenta]:open_file_folder:({self.dsCount}) {escape(path)}"
                 )
-                branch._nodeType = 'group'
+                branch._nodeType = "group"
                 tree._groupList.append(self.dsCount)
                 branch._datasetList = []
                 deeper_walk = True
-                
+
             elif isinstance(sub_ds, h5py.Dataset):
                 branch = tree.add(
                     f"[green]:page_with_curl:({self.dsCount}) {escape(path)}"
                 )
-                branch._nodeType = 'dataset'
+                branch._nodeType = "dataset"
                 branch._datasetList = [self.dsCount]
                 tree._datasetList.append(self.dsCount)
-                
+
             else:
                 branch = tree.add(
                     f"[red]:question_mark:({self.dsCount}) {escape(path)}"
                 )
-                branch._nodeType = 'unknown'
+                branch._nodeType = "unknown"
                 tree._unknownList.append(self.dsCount)
-            
+
             branch._dsPath = "/".join((tree._dsPath, path))
-            branch._parentGroup=tree
+            branch._parentGroup = tree
             branch._node_id = self.dsCount
             branch._node_attrs = {}
-            branch._groupList = []            
+            branch._groupList = []
             branch._unknownList = []
-            
+
             self.idTable[branch._node_id] = branch
             self.pathTable[branch._dsPath] = branch._node_id
 
@@ -71,18 +74,18 @@ class Dataset(UserDict):
 
             for attr in sub_ds.attrs:
                 branch._node_attrs[attr] = sub_ds.attrs.get(attr)
-                
+
             if deeper_walk:
                 self._walk_ds(sub_ds, branch)
-            
+
     def update_dstree(self):
         try:
-            with h5py.File(self.fname, 'r') as fhandle:
+            with h5py.File(self.fname, "r") as fhandle:
                 self.dsTree = Tree(
                     f":open_file_folder: (0) {escape(self.fname)}",
-                    guide_style = "bold bright_blue",
+                    guide_style="bold bright_blue",
                 )
-                self.dsTree._nodeType = 'root'
+                self.dsTree._nodeType = "root"
                 self.dsTree._dsPath = ""
                 self.dsTree._groupList = []
                 self.dsTree._datasetList = []
@@ -91,21 +94,22 @@ class Dataset(UserDict):
                 ds = fhandle["/"]
                 for attr in ds.attrs:
                     self.dsTree._node_attrs[attr] = ds.attrs.get(attr)
-                
+
                 self.dsCount = 1
-                self.idTable = {0:self.dsTree}
+                self.idTable = {0: self.dsTree}
                 self.pathTable = {"/": 0}
-                
+
                 self._walk_ds(fhandle, self.dsTree)
-                self.dsTree._dsPath = "/" # this is set last to avoid double // for all sub-directories
-                
+                self.dsTree._dsPath = (
+                    "/"  # this is set last to avoid double // for all sub-directories
+                )
+
         except Exception:
             print("Error encountered when opening hdf file for access.")
             print(f"File name: {self.fname}")
             self.console.print_exception(max_frames=20)
-    
+
     def __getitem__(self, key: Union[int, str]) -> Datanode:
-        
         try:
             if isinstance(key, int):
                 id = key
@@ -118,37 +122,41 @@ class Dataset(UserDict):
                 raise KeyError
 
             d = Datanode(
-                fname = self.fname,
-                path = self.get_path(id),
-                type = self.get_type(id),
-                id = id,
-                data = self.get_data_by_id(id),
-                attrs = self.get_attrs(id),
-                group_list = self.group_list(id),
-                dataset_list = self.dataset_list(id),
-                unknown_list = self.unknown_list(id),
+                fname=self.fname,
+                path=self.get_path(id),
+                type=self.get_type(id),
+                id=id,
+                data=self.get_data_by_id(id),
+                attrs=self.get_attrs(id),
+                group_list=self.group_list(id),
+                dataset_list=self.dataset_list(id),
+                unknown_list=self.unknown_list(id),
             )
         except KeyError:
-            self.console.print(f"Key \'{escape(key)}\' cannot be found in the Dataset \'{escape(self.fname)}\'")
+            self.console.print(
+                f"Key '{escape(key)}' cannot be found in the Dataset '{escape(self.fname)}'"
+            )
             d = Datanode(
-                fname = self.fname,
-                path = "",
-                type = "",
-                id = -1,
-                data = None,
-                attrs = None,
-                group_list = [],
-                dataset_list = [],
-                unknown_list = [],
+                fname=self.fname,
+                path="",
+                type="",
+                id=-1,
+                data=None,
+                attrs=None,
+                group_list=[],
+                dataset_list=[],
+                unknown_list=[],
             )
         except Exception:
             self.console.print_exception(max_frames=20)
         return d
-    
+
     def __setitem__(self, key, value):
-        raise Exception(f"Dataset \'{escape(self.fname)}\' is read-only. item#\'{escape(key)}\' will not be changed to value [{value}]")
+        raise Exception(
+            f"Dataset '{escape(self.fname)}' is read-only. item#'{escape(key)}' will not be changed to value [{value}]"
+        )
         return None
-    
+
     def get_path(self, id: int) -> str:
         try:
             node = self.idTable[id]
@@ -160,7 +168,7 @@ class Dataset(UserDict):
             return None
         except Exception:
             self.console.print_exception(max_frames=20)
-            
+
     def get_type(self, id: int) -> str:
         try:
             node = self.idTable[id]
@@ -172,24 +180,26 @@ class Dataset(UserDict):
             return None
         except Exception:
             self.console.print_exception(max_frames=20)
-        
+
     def get_data_by_id(self, id: int) -> np.array:
         try:
             node = self.idTable[id]
             data = None
-            if node and node._nodeType == 'dataset':
-                with h5py.File(self.fname, 'r') as fhandle:
+            if node and node._nodeType == "dataset":
+                with h5py.File(self.fname, "r") as fhandle:
                     dataset = fhandle[node._dsPath]
                     if dataset:
                         data = dataset[()]
         except KeyError:
-            print(f"Dataset {self.fname} looks for ID {id} but this node cannot be found.")
+            print(
+                f"Dataset {self.fname} looks for ID {id} but this node cannot be found."
+            )
             return None
         except Exception:
             self.console.print_exception(max_frames=20)
-        
+
         return data
-    
+
     def get_attrs(self, id: int) -> dict:
         try:
             node = self.idTable[id]
@@ -199,7 +209,7 @@ class Dataset(UserDict):
             return None
         except Exception:
             self.console.print_exception(max_frames=20)
-    
+
     def print_tree(self) -> None:
         self.console.print(self.dsTree)
 
@@ -208,23 +218,23 @@ class Dataset(UserDict):
             node = self.idTable[id]
         except KeyError:
             return []
-        
+
         return node._groupList
-    
+
     def dataset_list(self, id: int) -> list:
         try:
             node = self.idTable[id]
         except KeyError:
             return []
-        
+
         return node._datasetList
-    
+
     def unknown_list(self, id: int) -> list:
         try:
             node = self.idTable[id]
         except KeyError:
             return []
-        
+
         return node._unknownList
 
     def get_id(self, dsPath: str) -> int:
@@ -233,6 +243,3 @@ class Dataset(UserDict):
         except KeyError:
             return -1
         return id
-    
-
-    
