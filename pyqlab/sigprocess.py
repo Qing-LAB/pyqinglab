@@ -448,7 +448,7 @@ def sectionfit_GMM(
         if e > d.size:
             e = d.size
         section = d[b:e]
-        mdls[i] = fit_GMM(
+        mdls[i] = fit_GMModel(
             section,
             method=method,
             max_components=max_components,
@@ -487,7 +487,7 @@ def label_sectional_means(
 ):
     print("Fitting all means by a Gaussian model")
     all_means = section_fit_output["means"]
-    means_model = fit_GMM(
+    means_model = fit_GMModel(
         all_means,
         max_components=max_components,
         max_iter=max_iter,
