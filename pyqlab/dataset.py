@@ -1,7 +1,6 @@
 import h5py
 import numpy as np
 from rich.markup import escape
-from rich.text import Text
 from rich.tree import Tree
 from typing import Union
 from rich import print
@@ -10,9 +9,8 @@ from collections import UserDict
 from collections import namedtuple
 
 Datanode = namedtuple(
-    "Datanode", "fname path id type data attrs group_list dataset_list unknown_list"
+    "Datanode", "fname path id type data attrs subgroup_list dataset_list unknown_data_list"
 )
-
 
 class Dataset(UserDict):
     """
@@ -41,7 +39,7 @@ class Dataset(UserDict):
                     f"[bold magenta]:open_file_folder:({self.dsCount}) {escape(path)}"
                 )
                 branch._nodeType = "group"
-                tree._groupList.append(self.dsCount)
+                tree._subgroupList.append(self.dsCount)
                 branch._datasetList = []
                 deeper_walk = True
 
@@ -58,14 +56,14 @@ class Dataset(UserDict):
                     f"[red]:question_mark:({self.dsCount}) {escape(path)}"
                 )
                 branch._nodeType = "unknown"
-                tree._unknownList.append(self.dsCount)
+                tree._unknowndataList.append(self.dsCount)
 
             branch._dsPath = "/".join((tree._dsPath, path))
             branch._parentGroup = tree
             branch._node_id = self.dsCount
             branch._node_attrs = {}
-            branch._groupList = []
-            branch._unknownList = []
+            branch._subgroupList = []
+            branch._unknowndataList = []
 
             self.idTable[branch._node_id] = branch
             self.pathTable[branch._dsPath] = branch._node_id
@@ -87,9 +85,9 @@ class Dataset(UserDict):
                 )
                 self.dsTree._nodeType = "root"
                 self.dsTree._dsPath = ""
-                self.dsTree._groupList = []
+                self.dsTree._subgroupList = []
                 self.dsTree._datasetList = []
-                self.dsTree._unknownList = []
+                self.dsTree._unknowndataList = []
                 self.dsTree._node_attrs = {}
                 ds = fhandle["/"]
                 for attr in ds.attrs:
@@ -120,17 +118,18 @@ class Dataset(UserDict):
             else:
                 id = -1
                 raise KeyError
-
+            
+            node = self.idTable[id]
             d = Datanode(
                 fname=self.fname,
-                path=self.get_path(id),
-                type=self.get_type(id),
+                path=node._dsPath,
+                type=node._nodeType,
                 id=id,
                 data=self.get_data_by_id(id),
-                attrs=self.get_attrs(id),
-                group_list=self.group_list(id),
-                dataset_list=self.dataset_list(id),
-                unknown_list=self.unknown_list(id),
+                attrs=node._node_attrs,
+                subgroup_list=node._subgroupList,
+                dataset_list=node._datasetList,
+                unknown_data_list=node._unknowndataList,
             )
         except KeyError:
             self.console.print(
@@ -143,9 +142,9 @@ class Dataset(UserDict):
                 id=-1,
                 data=None,
                 attrs=None,
-                group_list=[],
+                subgroup_list=[],
                 dataset_list=[],
-                unknown_list=[],
+                unknown_data_list=[],
             )
         except Exception:
             self.console.print_exception(max_frames=20)
@@ -213,15 +212,15 @@ class Dataset(UserDict):
     def print_tree(self) -> None:
         self.console.print(self.dsTree)
 
-    def group_list(self, id: int) -> list:
+    def get_subgroup_list(self, id: int) -> list:
         try:
             node = self.idTable[id]
         except KeyError:
             return []
 
-        return node._groupList
+        return node._subgroupList
 
-    def dataset_list(self, id: int) -> list:
+    def get_dataset_list(self, id: int) -> list:
         try:
             node = self.idTable[id]
         except KeyError:
@@ -229,13 +228,13 @@ class Dataset(UserDict):
 
         return node._datasetList
 
-    def unknown_list(self, id: int) -> list:
+    def get_unknown_data_list(self, id: int) -> list:
         try:
             node = self.idTable[id]
         except KeyError:
             return []
 
-        return node._unknownList
+        return node._unknowndataList
 
     def get_id(self, dsPath: str) -> int:
         try:
