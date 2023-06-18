@@ -327,31 +327,32 @@ def label_data_with_model(
     ctable = [cmap(i) for i in np.linspace(0, 1, N)]
 
     m = model.means_.ravel().copy()
-    sorted_m_idx = np.argsort(m)
-    categorylabels_sorted = np.argsort(sorted_m_idx)
+    label_reordered_by_m_value = np.argsort(np.argsort(m))
+    #print(f"mean values: {m}")
+    #print(f"labels ordered by the m value: {label_reordered_by_m_value}")
 
-    category_unsorted = model.predict(data_for_predict)
-    category = np.array([categorylabels_sorted[i] for i in category_unsorted])
-    colors = [ctable[int(c)] for c in category]
+    data_labelled_by_m = model.predict(data_for_predict)
+    data_labelled = np.array([label_reordered_by_m_value[unsorted_label] for unsorted_label in data_labelled_by_m])
+    colors_for_labelled_data = [ctable[int(c)] for c in data_labelled]
 
-    category_value = np.array([model.means_[i] for i in category_unsorted])
-
-    legend_unsorted = model.predict(m.reshape(-1, 1))
-    legend = np.array([categorylabels_sorted[i] for i in legend_unsorted])
+    data_labelled_value = np.array([model.means_[i] for i in data_labelled_by_m])
+    
+    legend_unsorted = np.arange(0, m.size)
+    legend = np.array([label_reordered_by_m_value[unsorted_label] for unsorted_label in legend_unsorted])
     legend_color = [ctable[int(c)] for c in legend]
 
     data = {
         "data_for_predict": data_for_predict.ravel(),
         "data_for_label": data_for_label.ravel(),
-        "data_label": category.ravel(),
-        "label_value": category_value.ravel(),
+        "data_label": data_labelled.ravel(),
+        "label_value": data_labelled_value.ravel(),
     }
 
     model_result = {
         "components": model.means_.ravel(),
         "weights": model.weights_.ravel(),
         "covariances": model.covariances_.ravel(),
-        "label": categorylabels_sorted,
+        "label": label_reordered_by_m_value,
     }
 
     df = pd.DataFrame(data)
@@ -367,14 +368,14 @@ def label_data_with_model(
         dotsize = np.sqrt(model.covariances_.ravel())
         dotsize = dotsize / np.min(dotsize) * marker_base_size
         plt.subplot(1, 4, 1)
-        plt.scatter(categorylabels_sorted, m, c=legend_color, s=dotsize)
+        plt.scatter(label_reordered_by_m_value, m, c=legend_color, s=dotsize)
 
         plt.subplot(1, 4, (2, 4))
         plt.plot(np.arange(0, data_for_predict.size), data_for_predict, "-k", alpha=0.5)
         plt.scatter(
             np.arange(0, data_for_label.size),
             data_for_label,
-            c=colors,
+            c=colors_for_labelled_data,
             s=marker_base_size,
         )
         plt.close()
