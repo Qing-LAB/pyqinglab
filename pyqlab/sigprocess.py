@@ -97,7 +97,7 @@ def get_AIC_score(model: GMModel, X):
     return base_score + type_score * 2
 
 
-def fit_GMM(
+def fit_GMModel(
     data: np.array,
     method="gaussian",
     max_components: int = 4,
@@ -355,6 +355,7 @@ def label_data_with_model(
         "label": label_reordered_by_m_value,
     }
 
+
     df = pd.DataFrame(data)
     md = pd.DataFrame(model_result)
 
@@ -381,7 +382,7 @@ def label_data_with_model(
         plt.close()
         display.display(fig)
 
-    return (df, md)
+    return (df, md, legend_color)
 
 
 def get_event_timing(labelled_events: np.array, label: int) -> np.array:
@@ -449,7 +450,7 @@ def sectionfit_GMM(
         if e > d.size:
             e = d.size
         section = d[b:e]
-        mdls[i] = fit_GMM(
+        mdls[i] = fit_GMModel(
             section,
             method=method,
             max_components=max_components,
@@ -488,7 +489,7 @@ def label_sectional_means(
 ):
     print("Fitting all means by a Gaussian model")
     all_means = section_fit_output["means"]
-    means_model = fit_GMM(
+    means_model = fit_GMModel(
         all_means,
         max_components=max_components,
         max_iter=max_iter,
