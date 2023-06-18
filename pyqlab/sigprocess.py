@@ -354,6 +354,7 @@ def label_data_with_model(
         "label": categorylabels_sorted,
     }
 
+
     df = pd.DataFrame(data)
     md = pd.DataFrame(model_result)
 
@@ -380,7 +381,7 @@ def label_data_with_model(
         plt.close()
         display.display(fig)
 
-    return (df, md)
+    return (df, md, legend_color)
 
 
 def get_event_timing(labelled_events: np.array, label: int) -> np.array:

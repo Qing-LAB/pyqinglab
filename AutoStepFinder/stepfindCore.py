@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import matplotlib.pyplot as plt
 import numpy as np
-import stepfindTools as st
-
+from AutoStepFinder import stepfindTools as st
+from tqdm.auto import tqdm
 
 def stepfindcore(dataX=1, demo=0, tresH=0.15, N_iter=0):
 
@@ -78,7 +78,7 @@ def A121_split_until_ready(dataX=1, N_iter=50, demo=0):
         N_iter,
     )
     c = 0
-    for ii in range(1, N_iter + 1, 1):
+    for ii in tqdm(range(1, N_iter + 1, 1), desc="iterations for best fit:"):
         # for row entries of valid-to-fit segments:
         # check validity
         # properties from split table:

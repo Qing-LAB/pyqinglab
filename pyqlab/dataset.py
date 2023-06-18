@@ -17,6 +17,7 @@ class Dataset(UserDict):
     - Read from a hdf5 data set, and keep information of the structure
     - Provide a consistent way to read from HDF5, and only read data that is requested by a correct key
 
+    The attributes for data is saved in the first initial read of the file so for attributes for all nodes
     """
 
     def __init__(self, fname):
