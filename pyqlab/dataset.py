@@ -20,7 +20,7 @@ class Dataset(UserDict):
     The attributes for data is saved in the first initial read of the file so for attributes for all nodes
     """
 
-    def __init__(self, fname):
+    def __init__(self, fname, mode='read_only'):
         """
         will read from hdf5 and update a tree structure to represent how data are stored
         """

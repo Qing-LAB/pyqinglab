@@ -10,20 +10,23 @@ from pathlib import PurePath
 import pandas as pd
 
 def fig2nparray(fig: Figure, dpi: int = 300) -> np.array:
-    """
-    convert matplotlib figure into an image object saved as numpy array
+    """Convert matplotlib figure into an image saved as numpy array.
+    
+    Parameters:
     fig: the handle of the figure
     dpi: the dpi of the image, default is 300 DPI
-    return: numpy array of dtype uint8, containing all the data of the image
     
-    example:
+    Returns:
+    numpy array of dtype uint8, containing all the data of the image
+    
+    Example:
     
     a = np.linspace(0, 100, 100)
     b = a*a
     fig = plt.plot(a, b)
     plot.close()
     img = fig2nparray(fig, dpi=600)
-    
+
     """
     fig.tight_layout(pad=0)
     fig.set_dpi(dpi)
@@ -33,34 +36,42 @@ def fig2nparray(fig: Figure, dpi: int = 300) -> np.array:
     return data
 
 def generate_attr_str(attrs: dict, sep: str = "\n", eq: str = ":") -> str:
-    """
-    generate a string that contains all attributes with the format key : value \\n
-    where the ':' and the \\n are the equal sign and the separator, respectively, 
-    which can be changed by the parameters
-
+    """Generate a string that contains all attributes with the format {key1:value1\\nkey2:value2\\n...}, \
+        where the default equal op ':' and the separator string \\n can be changed by the user.
+    
+    Parameters:
     attrs: dictionary containing pairs of name and property as attributes for saving
     sep: string as separator between each pair of attribute
     eq: string as equal sign between the key name and the property
-    return: string containing all attributes as formatted
+    
+    Returns:
+    string containing all attributes as formatted
+
+    Example:
+
+    attrs = {'key1': 'value1', 'key2':'value2'}
+    attrs_str = generate_attr_str(attrs)
+
     """
     str_list = []
     for k, v in attrs.items():
-        str_list.append(f"{k}{eq}{v}")
+        str_list.append(f"{str(k)}{eq}{str(v)}")
     return sep.join(str_list)
 
 def get_timestamp_now() -> str:
-    """
-    generate a string as the timestamp for the current time
-    replaces : with _, and replaces space/blank with _ so that the string is a continuous 
-    string with no special charcters
+    """Generate a string as the timestamp for the current time, and replaces ':' with '_', \
+        and replaces space/blank with '_' so that the string is a continuous string with no special charcters
+    
+    Parameters:
+    None
+
+    Returns:
+    string containing the current time with special characters replaced by '_'
     """
     ct = datetime.datetime.now()
     ct = ct.replace(":", "_").replace("-", "_").replace(" ", "-")
     return ct
 
-def test_import():
-    return 1
-    
 class Datafile:
     """
     Datafile will only be used to write to/update HDF5 files. Every operation will 
