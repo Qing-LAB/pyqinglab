@@ -73,25 +73,25 @@ class HEKADataAcq:
         self,
         path_to_dll: str,
     ):
+        self._dacscale = np.ones(8, dtype=np.float64, order="C")
+        self._adcscale = np.ones(16, dtype=np.float64, order="C")
+        self._errmessage = np.zeros(256, dtype=np.byte, order="C")
+
+        self._board_type = LIH_BoardType.LIH_NONE
+        self._sec_per_tick = ctypes.c_double(np.NaN)
+        self._min_sampling_time = ctypes.c_double(np.NaN)
+        self._max_sampling_time = ctypes.c_double(np.NaN)
+        self._fifo_length = ctypes.c_int32(-1)
+        self._number_of_dacs = ctypes.c_int32(0)
+        self._number_of_adcs = ctypes.c_int32(0)
+
+        self._init_state = False
+
         try:
             if HEKADataAcq._dll is None:
                 HEKADataAcq._dll = ctypes.cdll.LoadLibrary(path_to_dll)
 
             assert HEKADataAcq._dll is not None
-            self._dacscale = np.ones(8, dtype=np.float64, order="C")
-            self._adcscale = np.ones(16, dtype=np.float64, order="C")
-            self._errmessage = np.zeros(256, dtype=np.byte, order="C")
-
-            self._board_type = LIH_BoardType.LIH_NONE
-            self._sec_per_tick = ctypes.c_double(np.NaN)
-            self._min_sampling_time = ctypes.c_double(np.NaN)
-            self._max_sampling_time = ctypes.c_double(np.NaN)
-            self._fifo_length = ctypes.c_int32(-1)
-            self._number_of_dacs = ctypes.c_int32(0)
-            self._number_of_adcs = ctypes.c_int32(0)
-
-            self._init_state = False
-
             HEKADataAcq._LIH_InitializeInterface = (
                 HEKADataAcq._dll.LIH_InitializeInterface
             )
@@ -277,6 +277,7 @@ class HEKADataAcq:
             if succeed, returns 0, otherwise, returns the error code. Error message will be printed to
             indicate reasons for the failure.
         """
+        retVal = -1
         try:
             assert HEKADataAcq._dll is not None
             assert HEKADataAcq._LIH_InitializeInterface is not None
@@ -303,7 +304,7 @@ class HEKADataAcq:
                 case _:
                     raise ValueError("Unknown type of Board")
 
-            self._retVal = HEKADataAcq._LIH_InitializeInterface(
+            retVal = HEKADataAcq._LIH_InitializeInterface(
                 self._errmessage.ctypes.data_as(ctypes.c_char_p),
                 EPCAmplifier,
                 board,
@@ -311,11 +312,11 @@ class HEKADataAcq:
                 ctypes.sizeof(self._options),
             )
 
-            if self._retVal != 0:
+            if retVal != 0:
                 print(self._errmessage.tobytes().decode("utf-8"))
                 raise Exception("Initialization of board failed.")
 
-            self._retVale = HEKADataAcq._LIH_GetBoardInfo(
+            retVale = HEKADataAcq._LIH_GetBoardInfo(
                 ctypes.byref(self._sec_per_tick),
                 ctypes.byref(self._min_sampling_time),
                 ctypes.byref(self._max_sampling_time),
@@ -323,7 +324,7 @@ class HEKADataAcq:
                 ctypes.byref(self._number_of_dacs),
                 ctypes.byref(self._number_of_adcs),
             )
-            if self._retVal != 0:
+            if retVal != 0:
                 self._init_state = False
                 print(GetErrorText())
                 raise Exception("Cannot get board information.")
@@ -336,7 +337,7 @@ class HEKADataAcq:
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
 
-        return self._retVal
+        return retVal
 
     def __del__(self):
         if (
