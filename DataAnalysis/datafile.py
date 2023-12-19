@@ -9,46 +9,6 @@ from pathlib import Path
 from pathlib import PurePath
 import pandas as pd
 
-def fig2nparray(fig: Figure, dpi: int = 300) -> np.array:
-    """Convert matplotlib figure into an image saved as numpy array.
-    
-    Parameters:
-    fig: the handle of the figure
-    dpi: the dpi of the image, default is 300 DPI
-    
-    Returns:
-    numpy array of dtype uint8, containing all the data of the image
-    
-    Example:
-    
-    a = np.linspace(0, 100, 100)
-    b = a*a
-    fig = plt.plot(a, b)
-    plot.close()
-    img = fig2nparray(fig, dpi=600)
-
-    """
-    fig.tight_layout(pad=0)
-    fig.set_dpi(dpi)
-    fig.canvas.draw()
-    data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    return data
-
-
-def get_timestamp_now() -> str:
-    """Generate a string as the timestamp for the current time, and replaces ':' with '_', \
-        and replaces space/blank with '_' so that the string is a continuous string with no special charcters
-    
-    Parameters:
-    None
-
-    Returns:
-    string containing the current time with special characters replaced by '_'
-    """
-    ct = datetime.datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
-    return ct
-
 class Datafile:
     """
     Datafile will only be used to write to/update HDF5 files. Every operation will 
@@ -222,7 +182,7 @@ class Datafile:
         self.save_as_dataset(d, name, groupkey, attr_str, overwrite=overwrite)
 
     def save_variable(self, name: str, groupkey: str, data: np.double, note: str, typestr="double"):
-        ct = get_timestamp_now()
+        ct = self.timestamp_now()
         attr_str = Datafile.generate_attr_str(
             {
                 "typestr": typestr,
@@ -233,7 +193,7 @@ class Datafile:
         self.save_as_dataset(data, name, groupkey, attr_str)
 
     def save_nparray(self, name: str, groupkey: str, data: np.array, note: str):
-        ct = get_timestamp_now()
+        ct = datafile.timestamp_now()
         attr_str = Datafile.generate_attr_str(
             {
                 "timestamp": ct,
@@ -264,3 +224,44 @@ class Datafile:
     #                     None
     #                 case np.array:
     #                     None
+    
+    @staticmethod
+    def fig2img(fig: Figure, dpi: int = 300) -> np.array:
+        """Convert matplotlib figure into an image saved as numpy array.
+
+        Parameters:
+        fig: the handle of the figure
+        dpi: the dpi of the image, default is 300 DPI
+
+        Returns:
+        numpy array of dtype uint8, containing all the data of the image
+
+        Example:
+
+        a = np.linspace(0, 100, 100)
+        b = a*a
+        fig = plt.plot(a, b)
+        plot.close()
+        img = fig2nparray(fig, dpi=600)
+
+        """
+        fig.tight_layout(pad=0)
+        fig.set_dpi(dpi)
+        fig.canvas.draw()
+        data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        return data
+    
+    @staticmethod
+    def timestamp_now(sep:str='_') -> str:
+        """Generate a string as the timestamp for the current time, and replaces ':' with '_', \
+            and replaces space/blank with '_' so that the string is a continuous string with no special charcters
+
+        Parameters:
+        None
+
+        Returns:
+        string containing the current time with special characters replaced by '_'
+        """
+        ct = datetime.datetime.now().strftime(f'%Y{sep}%m{sep}%d-%H{sep}%M{sep}%S')
+        return ct

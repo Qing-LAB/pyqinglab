@@ -12,7 +12,7 @@ Datanode = namedtuple(
     "Datanode", "fname path id type data attrs subgroup_list dataset_list unknown_data_list"
 )
 
-class Dataset(UserDict):
+class HDFDataset(UserDict):
     """
     - Read from a hdf5 data set, and keep information of the structure
     - Provide a consistent way to read from HDF5, and only read data that is requested by a correct key
@@ -29,7 +29,7 @@ class Dataset(UserDict):
         self.dsCount = 0
         self.update_dstree()
 
-    def _walk_ds(self, ds: Union[h5py.File, h5py.Dataset], tree: Tree) -> None:
+    def __walk_ds(self, ds: Union[h5py.File, h5py.Dataset], tree: Tree) -> None:
         paths = sorted(ds.keys())
 
         for path in paths:
@@ -75,7 +75,7 @@ class Dataset(UserDict):
                 branch._node_attrs[attr] = sub_ds.attrs.get(attr)
 
             if deeper_walk:
-                self._walk_ds(sub_ds, branch)
+                self.__walk_ds(sub_ds, branch)
 
     def update_dstree(self):
         try:
@@ -98,7 +98,7 @@ class Dataset(UserDict):
                 self.idTable = {0: self.dsTree}
                 self.pathTable = {"/": 0}
 
-                self._walk_ds(fhandle, self.dsTree)
+                self.__walk_ds(fhandle, self.dsTree)
                 self.dsTree._dsPath = (
                     "/"  # this is set last to avoid double // for all sub-directories
                 )
