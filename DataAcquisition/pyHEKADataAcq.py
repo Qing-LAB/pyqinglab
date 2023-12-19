@@ -533,3 +533,33 @@ class HEKADataAcq:
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
         return digit_out
+
+    def ReadAll(interval: float) -> dict:
+        if not self._init_state:
+            return None
+        try:
+            assert HEKADataAcq._dll is not None
+            assert HEKADataAcq._LIH_ReadAll is not None
+            adc_volts = np.zeros(self._number_of_adcs)
+            digital_port = ctypes.c_int16(0)
+            if interval < self._min_sampling_time.value:
+                interval = self._min_sampling_time.value
+            if interval > self._max_sampling_time.value:
+                interval = self._max_sampling_time.value
+            sample_interval = ctypes.c_double(interval)
+            retVal = HEKADataAcq._LIH_ReadAll(adc_volts.ctypes.dataas(ctypes.c_void_p), byref(digital_port), sample_interval)
+            if retVal:
+                all_input = {
+                    "ADCs": adc_volts,
+                    "DigitalInputs": digital_port,
+                    "Interval": sample_interval.value
+                }
+            else:
+                all_input = None
+        except Exception as ex:
+            print(ex)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+        return all_input
+
