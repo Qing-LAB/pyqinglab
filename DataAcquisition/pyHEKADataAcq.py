@@ -534,7 +534,7 @@ class HEKADataAcq:
             print(exc_type, fname, exc_tb.tb_lineno)
         return digit_out
 
-    def ReadAll(interval: float) -> dict:
+    def ReadAll(self, interval: float) -> dict:
         if not self._init_state:
             return None
         try:
