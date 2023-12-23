@@ -4,6 +4,7 @@ import ctypes
 import numpy as np
 from enum import Enum
 from multiprocessing import Process
+from typing import Callable
 
 
 class LIH_BoardType(Enum):
@@ -23,6 +24,9 @@ class LIH_AdcRange(Enum):
     LIH_AdcRange2V = 2
     LIH_AdcRange1V = 3
 
+class LIH_AcquisitionMode(Enum):
+    LIH_Acq_OnceOnly = 1,
+    LIH_Acq_Continuous = 2,
 
 class LIH_OptionsType(ctypes.Structure):
     _fields_ = [
@@ -493,7 +497,6 @@ class HEKADataAcq:
         try:
             assert HEKADataAcq._dll is not None
             assert HEKADataAcq._LIH_ReadDigital is not None
-
             digit_input = HEKADataAcq._LIH_ReadDigital()
         except Exception as ex:
             print(ex)
@@ -540,18 +543,18 @@ class HEKADataAcq:
         try:
             assert HEKADataAcq._dll is not None
             assert HEKADataAcq._LIH_ReadAll is not None
-            adc_volts = np.zeros(self._number_of_adcs)
+            adc_volts = np.zeros(self._number_of_adcs.value)
             digital_port = ctypes.c_int16(0)
             if interval < self._min_sampling_time.value:
                 interval = self._min_sampling_time.value
             if interval > self._max_sampling_time.value:
                 interval = self._max_sampling_time.value
             sample_interval = ctypes.c_double(interval)
-            retVal = HEKADataAcq._LIH_ReadAll(adc_volts.ctypes.dataas(ctypes.c_void_p), byref(digital_port), sample_interval)
+            retVal = HEKADataAcq._LIH_ReadAll(adc_volts.ctypes.data_as(ctypes.c_void_p), ctypes.byref(digital_port), sample_interval)
             if retVal:
                 all_input = {
                     "ADCs": adc_volts,
-                    "DigitalInputs": digital_port,
+                    "DigitalInputs": digital_port.value,
                     "Interval": sample_interval.value
                 }
             else:
@@ -562,4 +565,38 @@ class HEKADataAcq:
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
         return all_input
+
+    def InitTask(
+        DACChannels: tuple[int],
+        ADCChannels: tuple[int],
+        samples_per_channel: int,
+        sample_interval: float,
+        DACFunc: Callable[[int, int, np.array], np.array],
+        ADCFunc: Callable[[int, int, np.array], int]
+    ):
+        if not self._init_state:
+            return None
+        try:
+            assert HEKADataAcq._dll is not None
+            assert HEKADataAcq._LIH_StartStimAndSample is not None
+            self._DACFunc = DACFunc
+            self._ADCFunc = ADCFunc
+            self._DACChannels = DACChannels
+            self._ADCChannels = ADCChannels
+            self._DAC_Chn_count = len(self._DACChannels)
+            self._ADC_Chn_count = len(self._ADCChannels)
+            self._sample_interval = sample_interval
+            self._sampling_rate = 1/sample_interval
+            self._DACBuf = np.zeros(samples_per_channel, self._DAC_Chn_count)
+            self._ADCBuf = np.zeros(samples_per_cnannel, self._ADC_Chn_count)
+        except Exception as ex:
+            print(ex)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+
+
+
+
+
 
