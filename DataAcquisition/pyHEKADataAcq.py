@@ -5,6 +5,7 @@ import numpy as np
 from enum import Enum
 from multiprocessing import Process
 from typing import Callable
+from pyDAQBase import *
 
 
 class LIH_BoardType(Enum):
@@ -24,9 +25,13 @@ class LIH_AdcRange(Enum):
     LIH_AdcRange2V = 2
     LIH_AdcRange1V = 3
 
+
 class LIH_AcquisitionMode(Enum):
-    LIH_Acq_OnceOnly = 1,
-    LIH_Acq_Continuous = 2,
+    LIH_EnableDacOutput = 1
+    LIH_DontStopDacOnUnderrun = 2
+    LIH_DontStopAdcOnOverrun = 4
+    LIH_TriggeredAcquisition = 8
+
 
 class LIH_OptionsType(ctypes.Structure):
     _fields_ = [
@@ -42,14 +47,15 @@ class LIH_OptionsType(ctypes.Structure):
     ]
 
 
-class HEKADataAcq:
+class HEKADataAcq(DAQBaseClass):
     """
     The HEKADataAcq wraps the EpcDLL.dll/EpcDLL64.dll for python.
-    The functions from the DLL is saved as static class function starting with _LIH_
+    The functions from the DLL is saved as function pointers with name prefix as _LIH_
     The class provides a group of Python functions for each instance of the class
     """
 
     _dll = None
+    _board_param = {}
     _LIH_InitializeInterface = None
     _LIH_Shutdown = None
     _LIH_PhysicalChannels = None
@@ -75,8 +81,21 @@ class HEKADataAcq:
 
     def __init__(
         self,
-        path_to_dll: str,
+        path_to_dll: str = r"./ExternalLib/From HEKA/EpcDLL64.dll",
     ):
+        """
+        Initialization of the instance will check if the DLL has been loaded. 
+        If not, will load the library and initialize all the function pointers 
+        and parameter settings for relevant functions from the DLL
+
+        This function will also clear the default values of instance member 
+        variables such as board type, sampling parameters, and _init_state.
+
+        *** The actual initialization of the board and tasks will need to be done 
+        by specific functions explicitly. ***
+        """
+        super().__init__()
+
         self._dacscale = np.ones(8, dtype=np.float64, order="C")
         self._adcscale = np.ones(16, dtype=np.float64, order="C")
         self._errmessage = np.zeros(256, dtype=np.byte, order="C")
@@ -92,169 +111,275 @@ class HEKADataAcq:
         self._init_state = False
 
         try:
+            """
+            If DLL is not loaded, load the library, and update the function
+            pointers, as well as correctly setup the parameters of the
+            functions.
+            """
             if HEKADataAcq._dll is None:
                 HEKADataAcq._dll = ctypes.cdll.LoadLibrary(path_to_dll)
 
-            assert HEKADataAcq._dll is not None
-            HEKADataAcq._LIH_InitializeInterface = (
-                HEKADataAcq._dll.LIH_InitializeInterface
-            )
-            assert HEKADataAcq._LIH_InitializeInterface is not None
-            HEKADataAcq._LIH_InitializeInterface.argtypes = [
-                ctypes.c_char_p,
-                ctypes.c_int32,
-                ctypes.c_int32,
-                ctypes.c_void_p,
-                ctypes.c_int32,
-            ]
-            HEKADataAcq._LIH_InitializeInterface.restype = ctypes.c_int32
+                """
+                LIH_InitializeInterface
+                    - Initializes the AD board
+                    - Amplifier defines which amplifier is to be used:
+                        EPC9_Epc7Ampl
+                        EPC9_Epc8Ampl
+                    - ADBoard defines which AD board is to be used:
+                        LIH_ITC16Board
+                        LIH_ITC18Board
+                        LIH_LIH1600Board
+                        LIH_LIH88Board
+                    - Returns the value "LIH_Success", if the initialization succeeded;
+                    otherwise returns an error code, in which case the error description
+                    is returned in the "ErrorMessage" string.
+                    - The pointer "ErrorMessage" can be NUL or point to a string at least
+                    256 characters long. "ErrorMessage" will contain the message describing
+                    the result of the initialization in case an error occurred.
+                    - The pointer "OptionsPtr" can be NUL or point to a struct containing
+                    the options to set for the acquisition board, and to get from it.
+                    Make sure to initialize all fields, best by setting the complete record
+                    to zero.
+                    -- OptionsPtr->UseUSB
+                           for ITC-16 and ITC-18: if set to 1, use USB, otherwise PCI
+                    -- OptionsPtr->BoardNumber
+                           for ITC-16, ITC-18, and LIH1600:
+                              PCI slot index, index 0 means "first device found"
+                           for LIH8+8: should be zero, see OptionsPtr->DeviceNumber below
+                    -- OptionsPtr->FIFOSamples
+                           for LIH1600 and LIH8+8: size of virtual FIFO buffer
+                    -- OptionsPtr->MaxProbes
+                           ignored
+                    -- OptionsPtr->DeviceNumber
+                           for LIH8+8, if not empty:
+                              sets the USB device ID
+                           for LIH8+8, if empty:
+                              gets the USB device ID:
+                                 OptionsPtr->DeviceNumber 0 means "first device encountered",
+                                 otherwise use device at position OptionsPtr->DeviceNumber.
+                                 OptionsPtr->DeviceNumber should only be used to enumerate all device
+                                 in a loop. Position in USB-BUS enumeration may not be reliable.
+                    -- OptionsPtr->SerialNumber
+                           returns the amplifier serial number
+                    -- OptionsPtr->ExternalScaling
+                           for LIH88: if OptionsPtr->ExternalScaling = EPC_TRUE then raw DAC 
+                              and ADC data are handled unscaled, i.e., the user has to scale 
+                              the input and output data himself.
+                              The correct scaling factor are:
+                              - For internal scaling: 3200 units/volt.
+                              - For external scaling: scaling factors as returned in the arrays
+                                OptionsPtr->DacScaling and OptionsPtr->AdcScaling, see below.
+                    -- OptionsPtr->DacScaling
+                           Pointer to array of EPC_LONGREAL with a minimum length of 8.
+                           Returns scaling factors from volts to DAC-units for each DAC.
+                    -- OptionsPtr->AdcScaling
+                           Pointer to array of EPC_LONGREAL with a minimum length of 16.
+                           Returns scaling factors from ADC-units to volts for each ADC.
+                    - OptionsSize
+                    The size of the record pointed to by OptionsPtr.
+                    Can be zero, if OptionsPtr is nil, size of LIH_OptionsType otherwise.
 
-            HEKADataAcq._LIH_Shutdown = HEKADataAcq._dll.LIH_Shutdown
-            assert HEKADataAcq._LIH_Shutdown is not None
-            HEKADataAcq._LIH_Shutdown.argtypes = []
-            HEKADataAcq._LIH_Shutdown.restype = None
+                    EPC_INT32 EPC_Calling LIH_InitializeInterface(
+                            EPC_Str256Ptr ErrorMessage,
+                            EPC_INT32 Amplifier, 
+                            EPC_INT32 ADBoard,
+                            LIH_OptionsPtr OptionsPtr,
+                            EPC_INT32 OptionsSize );
+                """
+                HEKADataAcq._LIH_InitializeInterface = (
+                    HEKADataAcq._dll.LIH_InitializeInterface
+                )
+                assert HEKADataAcq._LIH_InitializeInterface is not None
+                HEKADataAcq._LIH_InitializeInterface.argtypes = [
+                    ctypes.c_char_p,
+                    ctypes.c_int32,
+                    ctypes.c_int32,
+                    ctypes.c_void_p,
+                    ctypes.c_int32,
+                ]
+                HEKADataAcq._LIH_InitializeInterface.restype = ctypes.c_int32
 
-            HEKADataAcq._LIH_Halt = HEKADataAcq._dll.LIH_Halt
-            assert HEKADataAcq._LIH_Halt is not None
-            HEKADataAcq._LIH_Halt.argtypes = []
-            HEKADataAcq._LIH_Halt.restype = None
+                """
+                LIH_Shutdown
+                    Sets the interface in a save mode (e.g. sets all DAC to zero),
+                    then terminates connections to drivers.
 
-            HEKADataAcq._LIH_ForceHalt = HEKADataAcq._dll.LIH_ForceHalt
-            assert HEKADataAcq._LIH_ForceHalt is not None
-            HEKADataAcq._LIH_ForceHalt.argtypes = []
-            HEKADataAcq._LIH_ForceHalt.restype = None
+                void EPC_Calling LIH_Shutdown( void )
+                """
+                HEKADataAcq._LIH_Shutdown = HEKADataAcq._dll.LIH_Shutdown
+                assert HEKADataAcq._LIH_Shutdown is not None
+                HEKADataAcq._LIH_Shutdown.argtypes = []
+                HEKADataAcq._LIH_Shutdown.restype = None
+                
+                """
+                LIH_Halt
+                    Stops acquisition, if the interface is acquiring.
 
-            HEKADataAcq._LIH_CheckSampleInterval = (
-                HEKADataAcq._dll.LIH_CheckSampleInterval
-            )
-            assert HEKADataAcq._LIH_CheckSampleInterval is not None
-            HEKADataAcq._LIH_CheckSampleInterval.argtypes = [ctypes.c_double]
-            HEKADataAcq._LIH_CheckSampleInterval.restype = ctypes.c_double
+                void EPC_Calling LIH_Halt( void )
+                """
+                HEKADataAcq._LIH_Halt = HEKADataAcq._dll.LIH_Halt
+                assert HEKADataAcq._LIH_Halt is not None
+                HEKADataAcq._LIH_Halt.argtypes = []
+                HEKADataAcq._LIH_Halt.restype = None
 
-            HEKADataAcq._LIH_SetInputRange = HEKADataAcq._dll.LIH_SetInputRange
-            assert HEKADataAcq._LIH_SetInputRange is not None
-            HEKADataAcq._LIH_SetInputRange.argtypes = [ctypes.c_int32, ctypes.c_int32]
-            HEKADataAcq._LIH_SetInputRange.restype = ctypes.c_int32
+                """
+                LIH_ForceHalt
+                    Issues a halt command under any acquisition state.
+                    LIH_Halt is the preferred command to stop acquiring. 
+                    LIH_ForceHalt consumes time for the forced USB communication,
+                    yet it guarantees resetting the acquisition mode. It may be
+                    the preferable command, when an error condition did occur.
+                
+                void EPC_Calling LIH_ForceHalt( void )
+                """
+                HEKADataAcq._LIH_ForceHalt = HEKADataAcq._dll.LIH_ForceHalt
+                assert HEKADataAcq._LIH_ForceHalt is not None
+                HEKADataAcq._LIH_ForceHalt.argtypes = []
+                HEKADataAcq._LIH_ForceHalt.restype = None
 
-            HEKADataAcq._LIH_GetBoardType = HEKADataAcq._dll.LIH_GetBoardType
-            assert HEKADataAcq._LIH_GetBoardType is not None
-            HEKADataAcq._LIH_GetBoardType.argtypes = []
-            HEKADataAcq._LIH_GetBoardType.restype = ctypes.c_int32
+                """
+                """
+                HEKADataAcq._LIH_CheckSampleInterval = (
+                    HEKADataAcq._dll.LIH_CheckSampleInterval
+                )
+                assert HEKADataAcq._LIH_CheckSampleInterval is not None
+                HEKADataAcq._LIH_CheckSampleInterval.argtypes = [ctypes.c_double]
+                HEKADataAcq._LIH_CheckSampleInterval.restype = ctypes.c_double
 
-            HEKADataAcq._LIH_GetErrorText = HEKADataAcq._dll.LIH_GetErrorText
-            assert HEKADataAcq._LIH_GetErrorText is not None
-            HEKADataAcq._LIH_GetErrorText.argtypes = [ctypes.c_void_p]
-            HEKADataAcq._LIH_GetErrorText.restype = None
+                """
+                """
+                HEKADataAcq._LIH_SetInputRange = HEKADataAcq._dll.LIH_SetInputRange
+                assert HEKADataAcq._LIH_SetInputRange is not None
+                HEKADataAcq._LIH_SetInputRange.argtypes = [
+                    ctypes.c_int32,
+                    ctypes.c_int32,
+                ]
+                HEKADataAcq._LIH_SetInputRange.restype = ctypes.c_int32
 
-            HEKADataAcq._LIH_GetBoardInfo = HEKADataAcq._dll.LIH_GetBoardInfo
-            assert HEKADataAcq._LIH_GetBoardInfo is not None
-            HEKADataAcq._LIH_GetBoardInfo.argtypes = [
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_int32),
-                ctypes.POINTER(ctypes.c_int32),
-                ctypes.POINTER(ctypes.c_int32),
-            ]
-            HEKADataAcq._LIH_GetBoardInfo.restype = None
+                HEKADataAcq._LIH_GetBoardType = HEKADataAcq._dll.LIH_GetBoardType
+                assert HEKADataAcq._LIH_GetBoardType is not None
+                HEKADataAcq._LIH_GetBoardType.argtypes = []
+                HEKADataAcq._LIH_GetBoardType.restype = ctypes.c_int32
 
-            HEKADataAcq._LIH_ReadAdc = HEKADataAcq._dll.LIH_ReadAdc
-            assert HEKADataAcq._LIH_ReadAdc is not None
-            HEKADataAcq._LIH_ReadAdc.argtypes = [ctypes.c_int32]
-            HEKADataAcq._LIH_ReadAdc.restype = ctypes.c_int32
+                HEKADataAcq._LIH_GetErrorText = HEKADataAcq._dll.LIH_GetErrorText
+                assert HEKADataAcq._LIH_GetErrorText is not None
+                HEKADataAcq._LIH_GetErrorText.argtypes = [ctypes.c_void_p]
+                HEKADataAcq._LIH_GetErrorText.restype = None
 
-            HEKADataAcq._LIH_AdcUnitsToVolts = HEKADataAcq._dll.LIH_AdcUnitsToVolts
-            assert HEKADataAcq._LIH_AdcUnitsToVolts is not None
-            HEKADataAcq._LIH_AdcUnitsToVolts.argtypes = [ctypes.c_int32, ctypes.c_int32]
-            HEKADataAcq._LIH_AdcUnitsToVolts.restype = ctypes.c_double
+                HEKADataAcq._LIH_GetBoardInfo = HEKADataAcq._dll.LIH_GetBoardInfo
+                assert HEKADataAcq._LIH_GetBoardInfo is not None
+                HEKADataAcq._LIH_GetBoardInfo.argtypes = [
+                    ctypes.POINTER(ctypes.c_double),
+                    ctypes.POINTER(ctypes.c_double),
+                    ctypes.POINTER(ctypes.c_double),
+                    ctypes.POINTER(ctypes.c_int32),
+                    ctypes.POINTER(ctypes.c_int32),
+                    ctypes.POINTER(ctypes.c_int32),
+                ]
+                HEKADataAcq._LIH_GetBoardInfo.restype = None
 
-            HEKADataAcq._LIH_VoltsToDacUnits = HEKADataAcq._dll.LIH_VoltsToDacUnits
-            assert HEKADataAcq._LIH_VoltsToDacUnits is not None
-            HEKADataAcq._LIH_VoltsToDacUnits.argtypes = [
-                ctypes.c_int32,
-                ctypes.POINTER(ctypes.c_double),
-            ]
-            HEKADataAcq._LIH_VoltsToDacUnits.restype = ctypes.c_int32
+                HEKADataAcq._LIH_ReadAdc = HEKADataAcq._dll.LIH_ReadAdc
+                assert HEKADataAcq._LIH_ReadAdc is not None
+                HEKADataAcq._LIH_ReadAdc.argtypes = [ctypes.c_int32]
+                HEKADataAcq._LIH_ReadAdc.restype = ctypes.c_int32
 
-            HEKADataAcq._LIH_SetDac = HEKADataAcq._dll.LIH_SetDac
-            assert HEKADataAcq._LIH_SetDac is not None
-            HEKADataAcq._LIH_SetDac.argtypes = [ctypes.c_int32, ctypes.c_int32]
-            HEKADataAcq._LIH_SetDac.restype = ctypes.c_int32
+                HEKADataAcq._LIH_AdcUnitsToVolts = HEKADataAcq._dll.LIH_AdcUnitsToVolts
+                assert HEKADataAcq._LIH_AdcUnitsToVolts is not None
+                HEKADataAcq._LIH_AdcUnitsToVolts.argtypes = [
+                    ctypes.c_int32,
+                    ctypes.c_int32,
+                ]
+                HEKADataAcq._LIH_AdcUnitsToVolts.restype = ctypes.c_double
 
-            HEKADataAcq._LIH_ReadDigital = HEKADataAcq._dll.LIH_ReadDigital
-            assert HEKADataAcq._LIH_ReadDigital is not None
-            HEKADataAcq._LIH_ReadDigital.argtypes = []
-            HEKADataAcq._LIH_ReadDigital.restype = ctypes.c_int16
+                HEKADataAcq._LIH_VoltsToDacUnits = HEKADataAcq._dll.LIH_VoltsToDacUnits
+                assert HEKADataAcq._LIH_VoltsToDacUnits is not None
+                HEKADataAcq._LIH_VoltsToDacUnits.argtypes = [
+                    ctypes.c_int32,
+                    ctypes.POINTER(ctypes.c_double),
+                ]
+                HEKADataAcq._LIH_VoltsToDacUnits.restype = ctypes.c_int32
 
-            HEKADataAcq._LIH_ReadAll = HEKADataAcq._dll.LIH_ReadAll
-            assert HEKADataAcq._LIH_ReadAll is not None
-            HEKADataAcq._LIH_ReadAll.argtypes = [
-                ctypes.c_void_p,
-                ctypes.POINTER(ctypes.c_int16),
-                ctypes.c_double,
-            ]
-            HEKADataAcq._LIH_ReadAll.restype = ctypes.c_ubyte
+                HEKADataAcq._LIH_SetDac = HEKADataAcq._dll.LIH_SetDac
+                assert HEKADataAcq._LIH_SetDac is not None
+                HEKADataAcq._LIH_SetDac.argtypes = [ctypes.c_int32, ctypes.c_int32]
+                HEKADataAcq._LIH_SetDac.restype = ctypes.c_int32
 
-            HEKADataAcq._LIH_GetDigitalOutState = (
-                HEKADataAcq._dll.LIH_GetDigitalOutState
-            )
-            assert HEKADataAcq._LIH_GetDigitalOutState is not None
-            HEKADataAcq._LIH_GetDigitalOutState.argtypes = []
-            HEKADataAcq._LIH_GetDigitalOutState.restype = ctypes.c_int16
+                HEKADataAcq._LIH_ReadDigital = HEKADataAcq._dll.LIH_ReadDigital
+                assert HEKADataAcq._LIH_ReadDigital is not None
+                HEKADataAcq._LIH_ReadDigital.argtypes = []
+                HEKADataAcq._LIH_ReadDigital.restype = ctypes.c_int16
 
-            HEKADataAcq._LIH_SetDigital = HEKADataAcq._dll.LIH_SetDigital
-            assert HEKADataAcq._LIH_SetDigital is not None
-            HEKADataAcq._LIH_SetDigital.argtypes = [ctypes.c_int16]
-            HEKADataAcq._LIH_SetDigital.restype = None
+                HEKADataAcq._LIH_ReadAll = HEKADataAcq._dll.LIH_ReadAll
+                assert HEKADataAcq._LIH_ReadAll is not None
+                HEKADataAcq._LIH_ReadAll.argtypes = [
+                    ctypes.c_void_p,
+                    ctypes.POINTER(ctypes.c_int16),
+                    ctypes.c_double,
+                ]
+                HEKADataAcq._LIH_ReadAll.restype = ctypes.c_ubyte
 
-            HEKADataAcq._LIH_StartStimAndSample = (
-                HEKADataAcq._dll.LIH_StartStimAndSample
-            )
-            assert HEKADataAcq._LIH_StartStimAndSample is not None
-            HEKADataAcq._LIH_StartStimAndSample.argtypes = [
-                ctypes.c_int32,
-                ctypes.c_int32,
-                ctypes.c_int32,
-                ctypes.c_int32,
-                ctypes.c_int16,
-                ctypes.c_void_p,
-                ctypes.c_void_p,
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.c_void_p,
-                ctypes.c_void_p,
-                ctypes.POINTER(ctypes.c_ubyte),
-                ctypes.c_ubyte,
-                ctypes.c_ubyte,
-            ]
-            HEKADataAcq._LIH_StartStimAndSample.restype = ctypes.c_ubyte
+                HEKADataAcq._LIH_GetDigitalOutState = (
+                    HEKADataAcq._dll.LIH_GetDigitalOutState
+                )
+                assert HEKADataAcq._LIH_GetDigitalOutState is not None
+                HEKADataAcq._LIH_GetDigitalOutState.argtypes = []
+                HEKADataAcq._LIH_GetDigitalOutState.restype = ctypes.c_int16
 
-            HEKADataAcq._LIH_AvailableStimAndSample = (
-                HEKADataAcq._dll.LIH_AvailableStimAndSample
-            )
-            assert HEKADataAcq._LIH_AvailableStimAndSample is not None
-            HEKADataAcq._LIH_AvailableStimAndSample.argtypes = [
-                ctypes.POINTER(ctypes.c_ubyte)
-            ]
-            HEKADataAcq._LIH_AvailableStimAndSample.restype = ctypes.c_int32
+                HEKADataAcq._LIH_SetDigital = HEKADataAcq._dll.LIH_SetDigital
+                assert HEKADataAcq._LIH_SetDigital is not None
+                HEKADataAcq._LIH_SetDigital.argtypes = [ctypes.c_int16]
+                HEKADataAcq._LIH_SetDigital.restype = None
 
-            HEKADataAcq._LIH_ReadStimAndSample = HEKADataAcq._dll.LIH_ReadStimAndSample
-            assert HEKADataAcq._LIH_ReadStimAndSample is not None
-            HEKADataAcq._LIH_ReadStimAndSample.argtypes = [
-                ctypes.c_int32,
-                ctypes.c_ubyte,
-                ctypes.c_void_p,
-                ctypes.c_void_p,
-            ]
-            HEKADataAcq._LIH_ReadStimAndSample.restype = None
+                HEKADataAcq._LIH_StartStimAndSample = (
+                    HEKADataAcq._dll.LIH_StartStimAndSample
+                )
+                assert HEKADataAcq._LIH_StartStimAndSample is not None
+                HEKADataAcq._LIH_StartStimAndSample.argtypes = [
+                    ctypes.c_int32,
+                    ctypes.c_int32,
+                    ctypes.c_int32,
+                    ctypes.c_int32,
+                    ctypes.c_int16,
+                    ctypes.c_void_p,
+                    ctypes.c_void_p,
+                    ctypes.POINTER(ctypes.c_double),
+                    ctypes.c_void_p,
+                    ctypes.c_void_p,
+                    ctypes.POINTER(ctypes.c_ubyte),
+                    ctypes.c_ubyte,
+                    ctypes.c_ubyte,
+                ]
+                HEKADataAcq._LIH_StartStimAndSample.restype = ctypes.c_ubyte
 
-            HEKADataAcq._LIH_AppendToFIFO = HEKADataAcq._dll.LIH_AppendToFIFO
-            assert HEKADataAcq._LIH_AppendToFIFO is not None
-            HEKADataAcq._LIH_AppendToFIFO.argtypes = [
-                ctypes.c_int32,
-                ctypes.c_ubyte,
-                ctypes.c_void_p,
-            ]
-            HEKADataAcq._LIH_AppendToFIFO.restype = ctypes.c_ubyte
+                HEKADataAcq._LIH_AvailableStimAndSample = (
+                    HEKADataAcq._dll.LIH_AvailableStimAndSample
+                )
+                assert HEKADataAcq._LIH_AvailableStimAndSample is not None
+                HEKADataAcq._LIH_AvailableStimAndSample.argtypes = [
+                    ctypes.POINTER(ctypes.c_ubyte)
+                ]
+                HEKADataAcq._LIH_AvailableStimAndSample.restype = ctypes.c_int32
+
+                HEKADataAcq._LIH_ReadStimAndSample = (
+                    HEKADataAcq._dll.LIH_ReadStimAndSample
+                )
+                assert HEKADataAcq._LIH_ReadStimAndSample is not None
+                HEKADataAcq._LIH_ReadStimAndSample.argtypes = [
+                    ctypes.c_int32,
+                    ctypes.c_ubyte,
+                    ctypes.c_void_p,
+                    ctypes.c_void_p,
+                ]
+                HEKADataAcq._LIH_ReadStimAndSample.restype = None
+
+                HEKADataAcq._LIH_AppendToFIFO = HEKADataAcq._dll.LIH_AppendToFIFO
+                assert HEKADataAcq._LIH_AppendToFIFO is not None
+                HEKADataAcq._LIH_AppendToFIFO.argtypes = [
+                    ctypes.c_int32,
+                    ctypes.c_ubyte,
+                    ctypes.c_void_p,
+                ]
+                HEKADataAcq._LIH_AppendToFIFO.restype = ctypes.c_ubyte
 
         except Exception as ex:
             print("Error when initializing HEKADataAcq library.")
@@ -263,9 +388,69 @@ class HEKADataAcq:
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
 
-    def InitBoard(
+    def __del__(self):
+        if (
+            HEKADataAcq._dll is not None
+            and HEKADataAcq._LIH_ForceHalt is not None
+            and HEKADataAcq._LIH_Shutdown is not None
+        ):
+            HEKADataAcq._LIH_ForceHalt()
+            HEKADataAcq._LIH_Shutdown()
+
+        super().__del__()
+
+    """
+    Below are the inherited member methods (interface) from super class.
+    """
+
+    def ConfigBoard(self, board_params: dict) -> int:
+        HEKADataAcq._board_param = board_params
+        retVal = -1
+        try:
+            retVal = 0
+        except Exception as ex:
+            print(ex)
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+
+        self._error_code = retVal
+        return retVal
+
+    def InitBoard(self) -> int:
+        return -1
+
+    def GetBoardInfo(self) -> dict:
+        return self.GetHEKABoardInfo()
+
+    def ShutdownBoard(self) -> int:
+        return -1
+
+    def ConfigTask(self, task_params: dict) -> int:
+        return -1
+
+    def InitTask(self) -> int:
+        return -1
+
+    def StartTask(self) -> int:
+        return -1
+
+    def StopTask(self) -> int:
+        return -1
+
+    def GetErrorCode(self) -> int:
+        return 0
+
+    def GetErrorMsg(self) -> str:
+        return ""
+
+    """
+    Below are HEKA specific functions.
+    """
+
+    def InitHEKADAQ(
         self,
-        board_type: LIH_BoardType = LIH_BoardType.LIH_ITC18USB,
+        board_type: LIH_BoardType,
         BoardNumber: int = 0,
         FIFOSamples: int = 0,
         EPCAmplifier: int = 1,
@@ -273,18 +458,47 @@ class HEKADataAcq:
         """
         Initialize the HEKA data acquisition board
         Parameters:
-            board_type : default to LIH_ITC18USB, other models can be see in the class LIH_BoardType
-            BoardNumber : only useful when dealing with PCI cards, check the EpcDLL.h file for details
-            FIFOSamples : default to zero
-            EPCAmplifier: not used in most functions, default to 1. check EpcDLL.h for details
+            board_type : 
+                default to LIH_ITC18USB, other models can be see in the 
+                class LIH_BoardType
+            BoardNumber : 
+                only useful when dealing with PCI cards, check the 
+                EpcDLL.h file for details
+            FIFOSamples : 
+                default to zero
+            EPCAmplifier: 
+                not used in most functions, default to 1. check EpcDLL.h 
+                for details
         Return:
-            if succeed, returns 0, otherwise, returns the error code. Error message will be printed to
-            indicate reasons for the failure.
+            if succeed, returns 0, otherwise, returns the error code. 
+            Error message will be printed to indicate reasons for the failure.
         """
+
         retVal = -1
         try:
             assert HEKADataAcq._dll is not None
-            assert HEKADataAcq._LIH_InitializeInterface is not None
+            assert _LIH_InitializeInterface is not None
+            assert _LIH_Shutdown is not None
+            assert _LIH_PhysicalChannels is not None
+            assert _LIH_StartStimAndSample is not None
+            assert _LIH_AvailableStimAndSample is not None
+            assert _LIH_ReadStimAndSample is not None
+            assert _LIH_AppendToFIFO is not None
+            assert _LIH_Halt is not None
+            assert _LIH_ForceHalt is not None
+            assert _LIH_ReadAdc is not None
+            assert _LIH_VoltsToDacUnits is not None
+            assert _LIH_AdcUnitsToVolts is not None
+            assert _LIH_ReadDigital is not None
+            assert _LIH_ReadAll is not None
+            assert _LIH_SetDac is not None
+            assert _LIH_GetDigitalOutState is not None
+            assert _LIH_SetDigital is not None
+            assert _LIH_CheckSampleInterval is not None
+            assert _LIH_SetInputRange is not None
+            assert _LIH_GetBoardType is not None
+            assert _LIH_GetErrorText is not None
+            assert _LIH_GetBoardInfo is not None
 
             self._options = LIH_OptionsType(
                 0, BoardNumber, FIFOSamples, 0, b"", b"", 0, None, None
@@ -341,18 +555,10 @@ class HEKADataAcq:
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
 
+        self._error_code = retVal
         return retVal
 
-    def __del__(self):
-        if (
-            HEKADataAcq._dll is not None
-            and HEKADataAcq._LIH_ForceHalt is not None
-            and HEKADataAcq._LIH_Shutdown is not None
-        ):
-            HEKADataAcq._LIH_ForceHalt()
-            HEKADataAcq._LIH_Shutdown()
-
-    def ShutdownBoard(self):
+    def ShutdownHEKADAQ(self):
         """
         Shutdown the board. Takes no parameter. No return value.
         """
@@ -364,19 +570,22 @@ class HEKADataAcq:
             HEKADataAcq._LIH_ForceHalt()
             HEKADataAcq._LIH_Shutdown()
 
-            self._board_type = LIH_BoardType.LIH_NONE
-            self._sec_per_tick = ctypes.c_double(np.NaN)
-            self._min_sampling_time = ctypes.c_double(np.NaN)
-            self._max_sampling_time = ctypes.c_double(np.NaN)
-            self._fifo_length = ctypes.c_int32(-1)
-            self._number_of_dacs = ctypes.c_int32(0)
-            self._number_of_adcs = ctypes.c_int32(0)
-
         except Exception as ex:
             print(ex)
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
+
+        self._board_type = LIH_BoardType.LIH_NONE
+        self._sec_per_tick = ctypes.c_double(np.NaN)
+        self._min_sampling_time = ctypes.c_double(np.NaN)
+        self._max_sampling_time = ctypes.c_double(np.NaN)
+        self._fifo_length = ctypes.c_int32(-1)
+        self._number_of_dacs = ctypes.c_int32(0)
+        self._number_of_adcs = ctypes.c_int32(0)
+
+        self._init_state = False
+        self._error_code = 0
 
     def CheckSamplingInterval(self, requested_sampling_interval: float) -> float:
         if not self._init_state:
@@ -399,7 +608,7 @@ class HEKADataAcq:
 
         return true_sampling_interval
 
-    def GetErrorText(self) -> str:
+    def GetHEKAErrorText(self) -> str:
         errtext = np.zeros(256, dtype=np.byte, order="C")
         try:
             assert HEKADataAcq._dll is not None
@@ -415,7 +624,7 @@ class HEKADataAcq:
 
         return errtext.tobytes().decode("utf-8")
 
-    def GetBoardInfo(self) -> dict:
+    def GetHEKABoardInfo(self) -> dict:
         return {
             "Board type": self._board_type,
             "Second per tick": self._sec_per_tick,
@@ -550,12 +759,16 @@ class HEKADataAcq:
             if interval > self._max_sampling_time.value:
                 interval = self._max_sampling_time.value
             sample_interval = ctypes.c_double(interval)
-            retVal = HEKADataAcq._LIH_ReadAll(adc_volts.ctypes.data_as(ctypes.c_void_p), ctypes.byref(digital_port), sample_interval)
+            retVal = HEKADataAcq._LIH_ReadAll(
+                adc_volts.ctypes.data_as(ctypes.c_void_p),
+                ctypes.byref(digital_port),
+                sample_interval,
+            )
             if retVal:
                 all_input = {
                     "ADCs": adc_volts,
                     "DigitalInputs": digital_port.value,
-                    "Interval": sample_interval.value
+                    "Interval": sample_interval.value,
                 }
             else:
                 all_input = None
@@ -566,13 +779,17 @@ class HEKADataAcq:
             print(exc_type, fname, exc_tb.tb_lineno)
         return all_input
 
-    def InitTask(
+    def InitHEKATask(
+        self,
         DACChannels: tuple[int],
         ADCChannels: tuple[int],
         samples_per_channel: int,
         sample_interval: float,
         DACFunc: Callable[[int, int, np.array], np.array],
-        ADCFunc: Callable[[int, int, np.array], int]
+        ADCFunc: Callable[[int, int, np.array], int],
+        DontStopDacOnUnderrun: bool = True,
+        DontStopAdcOnOverrun: bool = True,
+        TriggeredAcquisition: bool = False,
     ):
         if not self._init_state:
             return None
@@ -581,22 +798,42 @@ class HEKADataAcq:
             assert HEKADataAcq._LIH_StartStimAndSample is not None
             self._DACFunc = DACFunc
             self._ADCFunc = ADCFunc
-            self._DACChannels = DACChannels
-            self._ADCChannels = ADCChannels
+            self._DACChannels = np.array(DACChannels, dtype=int16)
+            self._ADCChannels = np.array(ADCChannels, dtype=int16)
             self._DAC_Chn_count = len(self._DACChannels)
             self._ADC_Chn_count = len(self._ADCChannels)
-            self._sample_interval = sample_interval
-            self._sampling_rate = 1/sample_interval
+            self._DAQ_samples_per_channel = samples_per_channel
+            self._sample_interval = ctypes.c_int16(sample_interval)
+            self._sampling_rate = 1 / sample_interval
             self._DACBuf = np.zeros(samples_per_channel, self._DAC_Chn_count)
             self._ADCBuf = np.zeros(samples_per_cnannel, self._ADC_Chn_count)
+            self._immediate_mode_notused = ctypes.c_ubyte(0)
+            self._DAQ_Mode = 0
+            if _DAC_Chn_count > 0:
+                self._DAQ_Mode = LIH_AcquisitionMode.LIH_EnableDacOutput.value
+            if DontStopDacOnUnderrun:
+                self._DAQ_Mode += LIH_AcquisitionMode.LIH_DontStopDacOnUnderrun.value
+            if DontStopAdcOnOverrun:
+                self._DAQ_Mode += LIH_AcquisitionMode.LIH_DontStopAdcOnOverrun.value
         except Exception as ex:
             print(ex)
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
 
-
-
-
-
-
+    def StartHEKATask(self):
+        HEKADataAcq._LIH_StartStimAndSample(
+            ctypes.c_int32(self._DAC_Chn_count),
+            ctypes.c_int32(self._ADC_Chn_count),
+            ctypes.c_int32(self._DAQ_samples_per_channel),
+            ctypes.c_int32(self._DAQ_samples_per_channel),
+            ctypes.c_int16(self._DAQ_Mode),
+            self._DACChannels.ctypes.data_as(ctypes.c_void_p),
+            self._ADCChannels.ctypes.data_as(ctypes.c_void_p),
+            ctypes.byref(self._sample_interval),
+            self._DACBuf.ctypes.data_as(ctypes.c_void_p),
+            self._ADCBuf.ctypes.data_as(ctypes.c_void_p),
+            ctypes.byref(self._immediate_mode_notused),
+            ctypes.c_ubyte(0),
+            ctypes.c_ubyte(1),
+        )
