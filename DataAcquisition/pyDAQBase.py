@@ -17,9 +17,9 @@ class DAQBaseClass:
     def ConfigBoard(self, board_params: dict) -> int:
         return 0
 
-    def GetBoardInfo(self) ->dict:
+    def GetBoardInfo(self) -> dict:
         return {}
-        
+
     def InitBoard(self) -> int:
         return 0
 

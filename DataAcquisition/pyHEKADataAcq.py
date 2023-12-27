@@ -84,14 +84,14 @@ class HEKADataAcq(DAQBaseClass):
         path_to_dll: str = r"./ExternalLib/From HEKA/EpcDLL64.dll",
     ):
         """
-        Initialization of the instance will check if the DLL has been loaded. 
-        If not, will load the library and initialize all the function pointers 
+        Initialization of the instance will check if the DLL has been loaded.
+        If not, will load the library and initialize all the function pointers
         and parameter settings for relevant functions from the DLL
 
-        This function will also clear the default values of instance member 
+        This function will also clear the default values of instance member
         variables such as board type, sampling parameters, and _init_state.
 
-        *** The actual initialization of the board and tasks will need to be done 
+        *** The actual initialization of the board and tasks will need to be done
         by specific functions explicitly. ***
         """
         super().__init__()
@@ -210,7 +210,7 @@ class HEKADataAcq(DAQBaseClass):
                 assert HEKADataAcq._LIH_Shutdown is not None
                 HEKADataAcq._LIH_Shutdown.argtypes = []
                 HEKADataAcq._LIH_Shutdown.restype = None
-                
+
                 """
                 LIH_Halt
                     Stops acquisition, if the interface is acquiring.
@@ -229,7 +229,7 @@ class HEKADataAcq(DAQBaseClass):
                     LIH_ForceHalt consumes time for the forced USB communication,
                     yet it guarantees resetting the acquisition mode. It may be
                     the preferable command, when an error condition did occur.
-                
+
                 void EPC_Calling LIH_ForceHalt( void )
                 """
                 HEKADataAcq._LIH_ForceHalt = HEKADataAcq._dll.LIH_ForceHalt
@@ -238,6 +238,10 @@ class HEKADataAcq(DAQBaseClass):
                 HEKADataAcq._LIH_ForceHalt.restype = None
 
                 """
+                LIH_CheckSampleInterval
+                    Returns the nearest sampling interval which the interface can support.
+
+                EPC_LONGREAL EPC_Calling LIH_CheckSampleInterval( EPC_LONGREAL SamplingInterval )
                 """
                 HEKADataAcq._LIH_CheckSampleInterval = (
                     HEKADataAcq._dll.LIH_CheckSampleInterval
@@ -247,6 +251,16 @@ class HEKADataAcq(DAQBaseClass):
                 HEKADataAcq._LIH_CheckSampleInterval.restype = ctypes.c_double
 
                 """
+                LIH_SetInputRange
+                    Selects the input range for the given AD channel, and returns the
+                    input range activated.
+                    Only specific interfaces support that feature, presently it is the ITC-18.
+                    Returns the Range actually set.
+                    Definition of LIH_AdcInputRangeType.
+
+                EPC_INT32 EPC_Calling LIH_SetInputRange(
+                            EPC_INT32 AdcChannel,
+                            EPC_INT32 InputRange )
                 """
                 HEKADataAcq._LIH_SetInputRange = HEKADataAcq._dll.LIH_SetInputRange
                 assert HEKADataAcq._LIH_SetInputRange is not None
@@ -256,16 +270,43 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_SetInputRange.restype = ctypes.c_int32
 
+                """
+                LIH_GetBoardType
+                    Returns the present interface type.
+                    Definition of LIH_BoardType.
+
+                EPC_INT32 EPC_Calling LIH_GetBoardType( void )
+                """
                 HEKADataAcq._LIH_GetBoardType = HEKADataAcq._dll.LIH_GetBoardType
                 assert HEKADataAcq._LIH_GetBoardType is not None
                 HEKADataAcq._LIH_GetBoardType.argtypes = []
                 HEKADataAcq._LIH_GetBoardType.restype = ctypes.c_int32
 
+                """
+                LIH_GetErrorText
+                    Returns the error as plain text, when an error occurred.
+
+                void EPC_Calling LIH_GetErrorText( EPC_ADDR32 Text )
+                """
                 HEKADataAcq._LIH_GetErrorText = HEKADataAcq._dll.LIH_GetErrorText
                 assert HEKADataAcq._LIH_GetErrorText is not None
                 HEKADataAcq._LIH_GetErrorText.argtypes = [ctypes.c_void_p]
                 HEKADataAcq._LIH_GetErrorText.restype = None
 
+                """
+                LIH_GetBoardInfo
+                    Returns information about the selected interface configuration.
+                    The information is only correct after having successfully initialized
+                    the interface.
+
+                void EPC_Calling LIH_GetBoardInfo(
+                            EPC_LONGREAL *SecPerTick,
+                            EPC_LONGREAL *MinSamplingTime,
+                            EPC_LONGREAL *MaxSamplingTime,
+                            EPC_INT32  *FIFOLength,
+                            EPC_INT32  *NumberOfDacs,
+                            EPC_INT32  *NumberOfAdcs )
+                """
                 HEKADataAcq._LIH_GetBoardInfo = HEKADataAcq._dll.LIH_GetBoardInfo
                 assert HEKADataAcq._LIH_GetBoardInfo is not None
                 HEKADataAcq._LIH_GetBoardInfo.argtypes = [
@@ -278,11 +319,26 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_GetBoardInfo.restype = None
 
+                """
+                LIH_ReadAdc
+                    Reads the given AD input channel.
+
+                EPC_INT32 EPC_Calling LIH_ReadAdc( EPC_INT32 Channel )
+                """
                 HEKADataAcq._LIH_ReadAdc = HEKADataAcq._dll.LIH_ReadAdc
                 assert HEKADataAcq._LIH_ReadAdc is not None
                 HEKADataAcq._LIH_ReadAdc.argtypes = [ctypes.c_int32]
                 HEKADataAcq._LIH_ReadAdc.restype = ctypes.c_int32
 
+                """
+                LIH_AdcUnitsToVolts
+                    Returns the voltage value corresponding to given "AdcUnits" value
+                    from the specified AD channel.
+
+                EPC_LONGREAL EPC_Calling LIH_AdcUnitsToVolts(
+                            EPC_INT32 AdcChannel,
+                            EPC_INT32 AdcUnits )
+                """
                 HEKADataAcq._LIH_AdcUnitsToVolts = HEKADataAcq._dll.LIH_AdcUnitsToVolts
                 assert HEKADataAcq._LIH_AdcUnitsToVolts is not None
                 HEKADataAcq._LIH_AdcUnitsToVolts.argtypes = [
@@ -291,6 +347,17 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_AdcUnitsToVolts.restype = ctypes.c_double
 
+                """
+                LIH_VoltsToDacUnits
+                    Returns the integer value needed to output the given "Volts" value
+                    on the specified DA channel.
+                    The Volts value will be updated to reflect the exact voltage output
+                    value corresponding to the returned DA units.
+
+                EPC_INT32 EPC_Calling LIH_VoltsToDacUnits(
+                        EPC_INT32 DacChannel,
+                        EPC_LONGREAL *Volts )
+                """
                 HEKADataAcq._LIH_VoltsToDacUnits = HEKADataAcq._dll.LIH_VoltsToDacUnits
                 assert HEKADataAcq._LIH_VoltsToDacUnits is not None
                 HEKADataAcq._LIH_VoltsToDacUnits.argtypes = [
@@ -299,16 +366,42 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_VoltsToDacUnits.restype = ctypes.c_int32
 
+                """
+                LIH_SetDac
+                    Sets the specified DA channel to the given value.
+
+                void EPC_Calling LIH_SetDac( EPC_INT32 Channel, EPC_INT32 Value )
+                """
                 HEKADataAcq._LIH_SetDac = HEKADataAcq._dll.LIH_SetDac
                 assert HEKADataAcq._LIH_SetDac is not None
                 HEKADataAcq._LIH_SetDac.argtypes = [ctypes.c_int32, ctypes.c_int32]
-                HEKADataAcq._LIH_SetDac.restype = ctypes.c_int32
+                HEKADataAcq._LIH_SetDac.restype = None
 
+                """
+                LIH_ReadDigital
+                    Reads the digital input port.
+
+                EPC_SET16 EPC_Calling LIH_ReadDigital( void  )
+                """
                 HEKADataAcq._LIH_ReadDigital = HEKADataAcq._dll.LIH_ReadDigital
                 assert HEKADataAcq._LIH_ReadDigital is not None
                 HEKADataAcq._LIH_ReadDigital.argtypes = []
                 HEKADataAcq._LIH_ReadDigital.restype = ctypes.c_int16
 
+                """
+                LIH_ReadAll
+                    Returns the values of all 8 or 16 AD input channels plus the
+                    status of the digital input port.
+                    "AdcVoltages" is a pointer to an array of "LIH_MaxAdcChannels" LONGREALs.
+                    "DigitalPort" is the pointer to a buffer into which the 16 bits of the
+                    2 digital input channel are stored.
+                    Returns true if successful, false if an error occurred.
+
+                EPC_BOOLEAN EPC_Calling LIH_ReadAll(
+                        EPC_ADDR32 AdcVoltages,
+                        EPC_SET16 *DigitalPort,
+                        EPC_LONGREAL Interval )
+                """
                 HEKADataAcq._LIH_ReadAll = HEKADataAcq._dll.LIH_ReadAll
                 assert HEKADataAcq._LIH_ReadAll is not None
                 HEKADataAcq._LIH_ReadAll.argtypes = [
@@ -318,6 +411,19 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_ReadAll.restype = ctypes.c_ubyte
 
+                """
+                LIH_GetDigitalOutState
+                    Returns the bit pattern of the digital user output port.
+                    Required to get the port state, when multiple devices are using
+                    the digital user output port. E.g., EPC9, EPC8, or TIB14.
+                    The user may want to use the bits which are not reserved to drive
+                    the attaaached device. In such a case, the user has to obtain the
+                    bit pattern via LIH_GetDigitalOutState, than change those bits he
+                    wants to change, then send the resulting bit pattern to the digital
+                    user output port. That way the mentioned devices are not affected.
+
+                EPC_SET16 EPC_Calling LIH_GetDigitalOutState( void )
+                """
                 HEKADataAcq._LIH_GetDigitalOutState = (
                     HEKADataAcq._dll.LIH_GetDigitalOutState
                 )
@@ -325,11 +431,107 @@ class HEKADataAcq(DAQBaseClass):
                 HEKADataAcq._LIH_GetDigitalOutState.argtypes = []
                 HEKADataAcq._LIH_GetDigitalOutState.restype = ctypes.c_int16
 
+                """
+                LIH_SetDigital
+                    Sets the status of the digital user port. It knows how to handle
+                    concurrent support for TIB14, EPC8, and the remaining user bits
+                    of the digital user port.
+
+                void EPC_Calling LIH_SetDigital( EPC_SET16 Value )
+                """
                 HEKADataAcq._LIH_SetDigital = HEKADataAcq._dll.LIH_SetDigital
                 assert HEKADataAcq._LIH_SetDigital is not None
                 HEKADataAcq._LIH_SetDigital.argtypes = [ctypes.c_int16]
                 HEKADataAcq._LIH_SetDigital.restype = None
 
+                """
+                LIH_StartStimAndSample
+                  - Starts stimulation and acquisition
+                  - "DacChannelNumber" is the number of DA channels to stimulate.
+                  - "AdcChannelNumber" is the number of AD channels to read.
+                  - "DacSamplesPerChannel" is the number of DA values to copy into the
+                    DAC FIFO for each used DacChannel, if "LIH_EnableDacOutput" is set
+                    in "AcquisitionMode".
+                    The value defined here defines the maximal number of DAC samples
+                    which may be filled into the DAC FIFO. The function LIH_AppendToFIFO
+                    should never append more data to the DAC FIFO than ADC samples
+                    read out from the ADC FIFO
+                  - "AdcSamplesPerChannel" is the number of AD values to read in pulsed
+                    acquisition mode, i.e. when "ReadContinuously" = 0.
+                  - "AcquisitionMode": bits defining the acquisition modes of the LIH,
+                    see LIH_AcquisitionModeType definitions above.
+                  - "DacChannels": a pointer to an array of EPC_INT16 containing the DAC to
+                    stimulate. DAC channel numbering is for analoge channels from 0 to 4
+                    for the 1. unit, 5 to 8 for the second unit, and for digital channels
+                    see definitions of LIH_DigitalChannelType above.
+                    It is NOT allowed to issue stimulation of the same DAC twice.
+                  - "AdcChannels": a pointer to an array of EPC_INT16 containing the ADC to
+                    read from. ADC channel numbering is for analoge channels from 0 to 8
+                    for the 1. unit, 9 to 15 for the second unit, and for digital channels
+                    see definitions of LIH_DigitalChannelType above.
+                    It is NOT allowed to issue acquisition from the same ADC twice.
+                  - "SampleInterval" defines the sampling interval between samples of
+                    one ADC reading, i.e. to read from 2 AD with a sampling interval
+                    of 1.0 ms, "SampleInterval", although the hardware may run at a
+                    different speed, e.g. the ITC-16 would run at 0.5 ms.
+                    "SampleInterval" should be within the conditions set by the hardware
+                    (LIH_GetBoardInfo gives you the required parameters). It will be
+                    changed otherwise to return the same value as LIH_CheckSampleInterval
+                    would return.
+                  - "OutData" is a pointer to an array of ADDRESSes, each element being
+                    the address of one DA-template.
+                    There must be least "DacChannelNumber" templates in that array.
+                  - "Immediate": if = 1, tells the driver to execute the acquisition in
+                    blocking mode, i.e., the function loads the FIFO, start acquiring,
+                    waits for the data to be in, then reads the ADC data from the FIFO,
+                    while blocking the bus for other tasks. The ADC data will be returned
+                    in "InData" in this case.
+                    "Immediate" will be true (i.e. 1) upon function return, if "Immediate"
+                    mode was possible.
+                  - "SetStimEnd": if = 1, tells the driver, that the DAC templates are
+                    not to be appended to. The reason is that a number of DAC values may
+                    (e.g. one sample for the ITC-16) may not be sent to the DAC at the
+                    end of the stimulation, if the driver is not told to handle that
+                    border situation.
+                    Generally:
+                      SetStimEnd = 1 for pulsed acquisition
+                      SetStimEnd = 0 for continuous acquisition
+                  - "ReadContinuously": defines whether continuous acquisition is asked
+                    for.
+                      ReadContinuously = 0 for pulsed acquisition
+                      ReadContinuously = 1 for continuous acquisition
+                  - The larger of "DacSamplesPerChannel" and "AdcSamplesPerChannel" defines
+                    the sizes of internal buffers. When appending DAC-data later with
+                    LIH_AppendToFIFO, one should never append more data than
+                    LIH_AvailableStimAndSample did return.
+                  - Returns true, if successful, false otherwise.
+
+                  WARNING:
+                    When requesting "Immediate" mode, one must check the "Immediate" value,
+                    when the function returns. "Immediate" will be false (i.e. 0), if
+                    conditions did not allow immediate acquisition. "Immediate" is supported
+                    only by few boards (e.g. ITC-1600 and LIH8+8) and only for simple
+                    acquisitions (short acquisition duration, no external trigger,
+                    limitations on number of channels and samples, etc.).
+                    "Immediate" is needed by those boards, which have sizable latencies
+                    in its normal acquisition mode. It allows to execute short acquisitions
+                    (setting one DAC, reading few samples from few ADC) with minimal latency.
+
+            EPC_BOOLEAN EPC_Calling LIH_StartStimAndSample(
+                       EPC_INT32 DacChannelNumber,
+                       EPC_INT32 AdcChannelNumber,
+                       EPC_INT32 DacSamplesPerChannel,
+                       EPC_INT32 AdcSamplesPerChannel,
+                       EPC_SET16 AcquisitionMode,
+                       EPC_ADDR32 DacChannels,
+                       EPC_ADDR32 AdcChannels,
+                       EPC_LONGREAL *SampleInterval,
+                       EPC_ADDR32 OutData,
+                       EPC_ADDR32 InData,            // for Immediate mode only
+                       EPC_BOOLEAN *Immediate,
+                       EPC_BOOLEAN SetStimEnd,
+                       EPC_BOOLEAN ReadContinuously )
+                """
                 HEKADataAcq._LIH_StartStimAndSample = (
                     HEKADataAcq._dll.LIH_StartStimAndSample
                 )
@@ -351,6 +553,14 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_StartStimAndSample.restype = ctypes.c_ubyte
 
+                """
+                LIH_AvailableStimAndSample
+                  Returns the number of samples available for one Adc channel.
+                  "StillRunning" will be true, if acquisition is still running, and false
+                  otherwise (e.g. if acquisition was stopped with a call to LIH_Halt).
+
+                EPC_INT32 EPC_Calling LIH_AvailableStimAndSample( EPC_BOOLEAN *StillRunning )
+                """
                 HEKADataAcq._LIH_AvailableStimAndSample = (
                     HEKADataAcq._dll.LIH_AvailableStimAndSample
                 )
@@ -360,6 +570,21 @@ class HEKADataAcq(DAQBaseClass):
                 ]
                 HEKADataAcq._LIH_AvailableStimAndSample.restype = ctypes.c_int32
 
+                """
+                LIH_ReadStimAndSample
+                  - "AdcSamplesPerChannel" is the number of AD values to read out from
+                    the FIFO for each acquired AdcChannel.
+                  - "DoHalt": if = 1, tells the driver to stop acquisition.
+                  - "InData" is a pointer to an array of ADDRESSes, each element being
+                    the address of one AD-buffer to which the data are copied to.
+                    There must be least "AdcChannelNumber" addresses in that array, as
+                    issued in the call to LIH_StartStimAndSample.
+
+                void EPC_Calling LIH_ReadStimAndSample(
+                           EPC_INT32 AdcSamplesPerChannel,
+                           EPC_BOOLEAN DoHalt,
+                           EPC_ADDR32 InData )
+                """
                 HEKADataAcq._LIH_ReadStimAndSample = (
                     HEKADataAcq._dll.LIH_ReadStimAndSample
                 )
@@ -368,10 +593,31 @@ class HEKADataAcq(DAQBaseClass):
                     ctypes.c_int32,
                     ctypes.c_ubyte,
                     ctypes.c_void_p,
-                    ctypes.c_void_p,
                 ]
                 HEKADataAcq._LIH_ReadStimAndSample.restype = None
 
+                """
+                LIH_AppendToFIFO
+                  The function LIH_AppendToFIFO should never append mode data to the
+                  DAC FIFO than ADC samples previously read out from the ADC FIFO by the
+                  function LIH_ReadStimAndSample.
+                  - "DacSamplesPerChannel" is the number of DA values to append to the
+                    DAC FIFO for each used DacChannel.
+                    "LIH_EnableDacOutput" must have been set in "AcquisitionMode", when
+                    LIH_StartStimAndSample was issued.
+                  - "SetStimEnd": if = 1, tells the driver, that the present DAC templates
+                    are the last to be appended. For the reason see LIH_StartStimAndSample.
+                  - "OutData" is a pointer to an array of ADDRESSes, each element being
+                    the address of one DA-template.
+                    There must be least "DacChannelNumber" templates in that array, as
+                    issued in the call to LIH_StartStimAndSample.
+                  - Never append more data than LIH_AvailableStimAndSample had reported.
+
+                EPC_BOOLEAN EPC_Calling LIH_AppendToFIFO(
+                           EPC_INT32 DacSamplesPerChannel,
+                           EPC_BOOLEAN SetStimEnd,
+                           EPC_ADDR32 OutData )
+                """
                 HEKADataAcq._LIH_AppendToFIFO = HEKADataAcq._dll.LIH_AppendToFIFO
                 assert HEKADataAcq._LIH_AppendToFIFO is not None
                 HEKADataAcq._LIH_AppendToFIFO.argtypes = [
@@ -458,19 +704,19 @@ class HEKADataAcq(DAQBaseClass):
         """
         Initialize the HEKA data acquisition board
         Parameters:
-            board_type : 
-                default to LIH_ITC18USB, other models can be see in the 
+            board_type :
+                default to LIH_ITC18USB, other models can be see in the
                 class LIH_BoardType
-            BoardNumber : 
-                only useful when dealing with PCI cards, check the 
+            BoardNumber :
+                only useful when dealing with PCI cards, check the
                 EpcDLL.h file for details
-            FIFOSamples : 
+            FIFOSamples :
                 default to zero
-            EPCAmplifier: 
-                not used in most functions, default to 1. check EpcDLL.h 
+            EPCAmplifier:
+                not used in most functions, default to 1. check EpcDLL.h
                 for details
         Return:
-            if succeed, returns 0, otherwise, returns the error code. 
+            if succeed, returns 0, otherwise, returns the error code.
             Error message will be printed to indicate reasons for the failure.
         """
 
