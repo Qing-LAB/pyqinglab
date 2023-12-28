@@ -55,7 +55,11 @@ class HEKADataAcq(DAQBaseClass):
     """
 
     _dll = None
-    _board_param = {}
+    _board_param = None
+    _board_type = -1
+    _EPC_amplifier = -1
+    _board_init_state = False
+
     _LIH_InitializeInterface = None
     _LIH_Shutdown = None
     _LIH_PhysicalChannels = None
@@ -635,14 +639,7 @@ class HEKADataAcq(DAQBaseClass):
             print(exc_type, fname, exc_tb.tb_lineno)
 
     def __del__(self):
-        if (
-            HEKADataAcq._dll is not None
-            and HEKADataAcq._LIH_ForceHalt is not None
-            and HEKADataAcq._LIH_Shutdown is not None
-        ):
-            HEKADataAcq._LIH_ForceHalt()
-            HEKADataAcq._LIH_Shutdown()
-
+        self.ShutdownBoard()
         super().__del__()
 
     """
@@ -650,10 +647,71 @@ class HEKADataAcq(DAQBaseClass):
     """
 
     def ConfigBoard(self, board_params: dict) -> int:
-        HEKADataAcq._board_param = board_params
+        """
+        This function gets board parameters and stores with the instance
+        Actual initialization of the board is not done
+        Parameter will be checked to make sure it can be translated into
+        actual parameters called in the InitBoard function.
+        board_params = {
+            "board name": ... # can be "ITC16", "ITC18", "ITC1600" or "ITC8+8"
+            "interface type": ... # can be "USB" or "PCI"
+            "board number": ... # identify PCI board if multiple are present
+            "FIFO len": ... # should be set to zero
+            "EPC amplifier": ... # should be set to 1
+        }
+        """
         retVal = -1
         try:
-            retVal = 0
+            if HEKADataAcq._board_param is not None or HEKADataAcq._board_init_state:
+                raise Exception("HEKA board can only be configured once.")
+            else:
+                board_name = board_params["board name"]
+                interface_type = board_params["interface type"]
+                board_number = board_params["board number"]
+                FIFO_len = board_params["FIFO len"]
+                EPC_amplifier = board_params["EPC amplifier"]
+                match board_type:
+                    case "PCI":
+                        match board_name:
+                            case "ITC16":
+                                HEKADataAcq._board_type = LIH_ITC16Board
+                            case "ITC18":
+                                HEKADataAcq._board_type = LIH_ITC18Board
+                            case "ITC1600":
+                                HEKADataAcq._board_type = LIH_LIH1600Board
+                            case "ITC8+8":
+                                HEKADataAcq._board_type = LIH_LIH88Board
+                            case _:
+                                raise Exception("unknown PCI HEKA board name.")
+                    case "USB":
+                        match board_name:
+                            case "ITC16":
+                                HEKADataAcq._board_type = LIH_ITC16USB
+                            case "ITC18":
+                                HEKADataAcq._board_type = LIH_ITC18USB
+                            case _:
+                                raise Exception("unknown USB HEKA board name.")
+                    case _:
+                        raise Exception("Only PCI or USB board type are allowed.")
+
+                match EPC_amplifier:
+                    case "EPC9_Epc7Ampl":
+                        HEKADataAcq._EPC_amplifier = 0
+                    case "EPC9_Epc8Ampl":
+                        HEKADataAcq._EPC_amplifier = 1
+                    case _:
+                        raise Excpetion(
+                            "Unknown EPC amplifier. Only EPC9_Epc7Ampl or EPC9_Epc8Ampl are allowed."
+                        )
+
+                HEKADataAcq._board_param = {
+                    "board name": board_name,
+                    "interface type": interface_type,
+                    "board number": board_number,
+                    "FIFO len": FIFO_len,
+                    "EPC amplifier": EPC_amplifier,
+                }
+                retVal = 0
         except Exception as ex:
             print(ex)
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -664,13 +722,23 @@ class HEKADataAcq(DAQBaseClass):
         return retVal
 
     def InitBoard(self) -> int:
+        if (not HEKADataAcq._board_init_state) and (
+            HEKADataAcq._board_param is not None
+        ):
+            InitHEKADAQ(
+                HEKADataAcq._board_type,
+                HEKADataAcq._board_param["board number"],
+                HEKADataAcq._board_param["FIFO len"],
+                HEKADataAcq._EPC_amplifier,
+            )
         return -1
 
     def GetBoardInfo(self) -> dict:
         return self.GetHEKABoardInfo()
 
     def ShutdownBoard(self) -> int:
-        return -1
+        self.ShutdownHEKADAQ()
+        return 0
 
     def ConfigTask(self, task_params: dict) -> int:
         return -1
