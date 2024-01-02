@@ -26,6 +26,12 @@ class DAQBaseClass:
     def ShutdownBoard(self) -> int:
         return 0
 
+    def SingleRead(self, param: dict) -> dict:
+        return None
+
+    def SingleWrite(self, param: dict) -> None:
+        return None
+
     def ConfigTask(self, task_params: dict) -> int:
         return 0
 

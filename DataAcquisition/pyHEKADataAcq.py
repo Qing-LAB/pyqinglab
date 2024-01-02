@@ -5,7 +5,7 @@ import numpy as np
 from enum import Enum
 from multiprocessing import Process
 from typing import Callable
-from pyDAQBase import *
+from pyqinglab.DataAcquisition.pyDAQBase import *
 
 
 class LIH_BoardType(Enum):
@@ -62,7 +62,6 @@ class HEKADataAcq(DAQBaseClass):
 
     _LIH_InitializeInterface = None
     _LIH_Shutdown = None
-    _LIH_PhysicalChannels = None
     _LIH_StartStimAndSample = None
     _LIH_AvailableStimAndSample = None
     _LIH_ReadStimAndSample = None
@@ -83,9 +82,23 @@ class HEKADataAcq(DAQBaseClass):
     _LIH_GetErrorText = None
     _LIH_GetBoardInfo = None
 
+    _dacscale: np.array
+    _adcscale: np.array
+    _errmessage: np.array
+
+    _board_type: LIH_BoardType
+    _sec_per_tick: ctypes.c_double
+    _min_sampling_time: ctypes.c_double
+    _max_sampling_time: ctypes.c_double
+    _fifo_length: ctypes.c_int32
+    _number_of_dacs: ctypes.c_int32
+    _number_of_adcs: ctypes.c_int32
+
+    _init_state: bool
+
     def __init__(
         self,
-        path_to_dll: str = r"./ExternalLib/From HEKA/EpcDLL64.dll",
+        path_to_dll: str = "",
     ):
         """
         Initialization of the instance will check if the DLL has been loaded.
@@ -100,6 +113,13 @@ class HEKADataAcq(DAQBaseClass):
         """
         super().__init__()
 
+        if len(path_to_dll) == 0:
+            path_to_dll = (
+                os.path.dirname(
+                    os.path.abspath(sys.modules[type(self).__module__].__file__)
+                )
+                + r"./ExternalLib/From HEKA/EpcDLL64.dll"
+            )
         self._dacscale = np.ones(8, dtype=np.float64, order="C")
         self._adcscale = np.ones(16, dtype=np.float64, order="C")
         self._errmessage = np.zeros(256, dtype=np.byte, order="C")
@@ -657,7 +677,7 @@ class HEKADataAcq(DAQBaseClass):
             "interface type": ... # can be "USB" or "PCI"
             "board number": ... # identify PCI board if multiple are present
             "FIFO len": ... # should be set to zero
-            "EPC amplifier": ... # should be set to 1
+            "EPC amplifier": ... # if set to blank will default to EPC9_Epc7Ampl
         }
         """
         retVal = -1
@@ -670,37 +690,39 @@ class HEKADataAcq(DAQBaseClass):
                 board_number = board_params["board number"]
                 FIFO_len = board_params["FIFO len"]
                 EPC_amplifier = board_params["EPC amplifier"]
-                match board_type:
+                match interface_type:
                     case "PCI":
                         match board_name:
                             case "ITC16":
-                                HEKADataAcq._board_type = LIH_ITC16Board
+                                HEKADataAcq._board_type = LIH_BoardType.LIH_ITC16Board
                             case "ITC18":
-                                HEKADataAcq._board_type = LIH_ITC18Board
+                                HEKADataAcq._board_type = LIH_BoardType.LIH_ITC18Board
                             case "ITC1600":
-                                HEKADataAcq._board_type = LIH_LIH1600Board
+                                HEKADataAcq._board_type = LIH_BoardType.LIH_LIH1600Board
                             case "ITC8+8":
-                                HEKADataAcq._board_type = LIH_LIH88Board
+                                HEKADataAcq._board_type = LIH_BoardType.LIH_LIH88Board
                             case _:
                                 raise Exception("unknown PCI HEKA board name.")
                     case "USB":
                         match board_name:
                             case "ITC16":
-                                HEKADataAcq._board_type = LIH_ITC16USB
+                                HEKADataAcq._board_type = LIH_BoardType.LIH_ITC16USB
                             case "ITC18":
-                                HEKADataAcq._board_type = LIH_ITC18USB
+                                HEKADataAcq._board_type = LIH_BoardType.LIH_ITC18USB
                             case _:
                                 raise Exception("unknown USB HEKA board name.")
                     case _:
                         raise Exception("Only PCI or USB board type are allowed.")
 
                 match EPC_amplifier:
+                    case "":
+                        HEKADataAcq._EPC_amplifier = 0
                     case "EPC9_Epc7Ampl":
                         HEKADataAcq._EPC_amplifier = 0
                     case "EPC9_Epc8Ampl":
                         HEKADataAcq._EPC_amplifier = 1
                     case _:
-                        raise Excpetion(
+                        raise Exception(
                             "Unknown EPC amplifier. Only EPC9_Epc7Ampl or EPC9_Epc8Ampl are allowed."
                         )
 
@@ -722,16 +744,17 @@ class HEKADataAcq(DAQBaseClass):
         return retVal
 
     def InitBoard(self) -> int:
+        retVal = -1
         if (not HEKADataAcq._board_init_state) and (
             HEKADataAcq._board_param is not None
         ):
-            InitHEKADAQ(
+            retVal = self.InitHEKADAQ(
                 HEKADataAcq._board_type,
                 HEKADataAcq._board_param["board number"],
                 HEKADataAcq._board_param["FIFO len"],
                 HEKADataAcq._EPC_amplifier,
             )
-        return -1
+        return retVal
 
     def GetBoardInfo(self) -> dict:
         return self.GetHEKABoardInfo()
@@ -739,6 +762,47 @@ class HEKADataAcq(DAQBaseClass):
     def ShutdownBoard(self) -> int:
         self.ShutdownHEKADAQ()
         return 0
+
+    def SingleRead(self, param: dict = {}) -> dict:
+        if "interval" in param.keys():
+            interval = param["interval"]
+        else:
+            interval = self._max_sampling_time.value
+        data = self.ReadAll(interval)
+        digital_output = self.GetDigitalOutputState()
+        adc = data["ADCs"]
+        digital_input = data["DigitalInputs"]
+        dict = {"adc" + str(i): v for i, v in enumerate(adc)}
+        strBin = bin(digital_input & 0xFFFF)
+        digital_input_bools = [i == "1" for i in strBin[2:].zfill(16)[::-1]]
+        for i, b in enumerate(digital_input_bools):
+            dict["di" + str(i)] = b
+        strBin = bin(digital_output & 0xFFFF)
+        digital_output_bools = [i == "1" for i in strBin[2:].zfill(16)[::-1]]
+        for i, b in enumerate(digital_output_bools):
+            dict["do" + str(i)] = b
+        dict["all_adc"] = adc
+        dict["digital_inputs_int16"] = digital_input
+        dict["digital_outputs_int16"] = digital_output
+        dict["all_digital_inputs"] = digital_input_bools
+        dict["all_digital_outputs"] = digital_output_bools
+        return dict
+
+    def SingleWrite(self, param: dict = {}) -> None:
+        for k, v in enumerate(param):
+            match k:
+                case "dac0":
+                    self.SetDACChannel(0, v)
+                case "dac1":
+                    self.SetDACChannel(1, v)
+                case "dac2":
+                    self.SetDACChannel(2, v)
+                case "dac3":
+                    self.SetDACChannel(3, v)
+                case "digital_output":
+                    self.SetDigitalOutput(v)
+                case _:
+                    pass
 
     def ConfigTask(self, task_params: dict) -> int:
         return -1
@@ -791,28 +855,27 @@ class HEKADataAcq(DAQBaseClass):
         retVal = -1
         try:
             assert HEKADataAcq._dll is not None
-            assert _LIH_InitializeInterface is not None
-            assert _LIH_Shutdown is not None
-            assert _LIH_PhysicalChannels is not None
-            assert _LIH_StartStimAndSample is not None
-            assert _LIH_AvailableStimAndSample is not None
-            assert _LIH_ReadStimAndSample is not None
-            assert _LIH_AppendToFIFO is not None
-            assert _LIH_Halt is not None
-            assert _LIH_ForceHalt is not None
-            assert _LIH_ReadAdc is not None
-            assert _LIH_VoltsToDacUnits is not None
-            assert _LIH_AdcUnitsToVolts is not None
-            assert _LIH_ReadDigital is not None
-            assert _LIH_ReadAll is not None
-            assert _LIH_SetDac is not None
-            assert _LIH_GetDigitalOutState is not None
-            assert _LIH_SetDigital is not None
-            assert _LIH_CheckSampleInterval is not None
-            assert _LIH_SetInputRange is not None
-            assert _LIH_GetBoardType is not None
-            assert _LIH_GetErrorText is not None
-            assert _LIH_GetBoardInfo is not None
+            assert HEKADataAcq._LIH_InitializeInterface is not None
+            assert HEKADataAcq._LIH_Shutdown is not None
+            assert HEKADataAcq._LIH_StartStimAndSample is not None
+            assert HEKADataAcq._LIH_AvailableStimAndSample is not None
+            assert HEKADataAcq._LIH_ReadStimAndSample is not None
+            assert HEKADataAcq._LIH_AppendToFIFO is not None
+            assert HEKADataAcq._LIH_Halt is not None
+            assert HEKADataAcq._LIH_ForceHalt is not None
+            assert HEKADataAcq._LIH_ReadAdc is not None
+            assert HEKADataAcq._LIH_VoltsToDacUnits is not None
+            assert HEKADataAcq._LIH_AdcUnitsToVolts is not None
+            assert HEKADataAcq._LIH_ReadDigital is not None
+            assert HEKADataAcq._LIH_ReadAll is not None
+            assert HEKADataAcq._LIH_SetDac is not None
+            assert HEKADataAcq._LIH_GetDigitalOutState is not None
+            assert HEKADataAcq._LIH_SetDigital is not None
+            assert HEKADataAcq._LIH_CheckSampleInterval is not None
+            assert HEKADataAcq._LIH_SetInputRange is not None
+            assert HEKADataAcq._LIH_GetBoardType is not None
+            assert HEKADataAcq._LIH_GetErrorText is not None
+            assert HEKADataAcq._LIH_GetBoardInfo is not None
 
             self._options = LIH_OptionsType(
                 0, BoardNumber, FIFOSamples, 0, b"", b"", 0, None, None
@@ -954,7 +1017,7 @@ class HEKADataAcq(DAQBaseClass):
             channel < 0 or channel >= self._number_of_adcs.value
         ):
             return np.NaN
-        actual_range = LIH_AdcRange(LIH_InvalidRange)
+        actual_range = LIH_AdcRange.LIH_InvalidRange
         try:
             assert HEKADataAcq._dll is not None
             assert HEKADataAcq._LIH_SetInputRange is not None
