@@ -1,6 +1,22 @@
 """
 This is a prototype class to define necessary functions that all data acquisition classes should have.
 """
+import multiprocessing
+from multiprocessing.managers import SharedMemoryManager
+from multiprocessing import Lock
+import numpy
+import uuid
+
+class pyDAQTask:    
+    def __init__(self) -> None:
+        self.mem_manager = SharedMemoryManager()
+        self.mem_manager.start()
+    
+    def __del__(self):
+        self.mem_manager.shutdown()
+        
+    def ConfigureTask(self):
+        pass
 
 
 class DAQBaseClass:
@@ -32,16 +48,16 @@ class DAQBaseClass:
     def SingleWrite(self, param: dict) -> None:
         return None
 
-    def ConfigTask(self, task_params: dict) -> int:
+    def ConfigTask(self, task_params: dict, task_manager: pyDAQTask) -> int:
         return 0
 
-    def InitTask(self) -> int:
+    def InitTask(self, task_manager: pyDAQTask) -> int:
         return 0
 
-    def StartTask(self) -> int:
+    def StartTask(self, task_manager: pyDAQTask) -> int:
         return 0
 
-    def StopTask(self) -> int:
+    def StopTask(self, task_manager: pyDAQTask) -> int:
         return 0
 
     def GetErrorCode(self) -> int:
@@ -49,3 +65,7 @@ class DAQBaseClass:
 
     def GetErrorMsg(self) -> str:
         return ""
+
+if __name__ == '__main__':
+    task = pyDAQTask()
+    print("OK")
