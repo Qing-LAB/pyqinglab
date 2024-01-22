@@ -1,10 +1,12 @@
-import sys
-import os
 import ctypes
-import numpy as np
+import os
+import sys
 from enum import Enum
 from multiprocessing import Process
 from typing import Callable
+
+import numpy as np
+
 from pyqinglab.DataAcquisition.pyDAQBase import *
 
 
@@ -804,16 +806,16 @@ class HEKADataAcq(DAQBaseClass):
                 case _:
                     pass
 
-    def ConfigTask(self, task_params: dict) -> int:
+    def ConfigTask(self, task_params: dict, task_manager: DAQTaskManager) -> int:
         return -1
 
-    def InitTask(self) -> int:
+    def InitTask(self, task_manager: DAQTaskManager) -> int:
         return -1
 
-    def StartTask(self) -> int:
+    def StartTask(self, task_manager: DAQTaskManager) -> int:
         return -1
 
-    def StopTask(self) -> int:
+    def StopTask(self, task_manager: DAQTaskManager) -> int:
         return -1
 
     def GetErrorCode(self) -> int:

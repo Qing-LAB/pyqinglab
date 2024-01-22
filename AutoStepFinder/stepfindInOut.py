@@ -1,11 +1,12 @@
 import csv
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import tkinter as tk
-from tkinter import filedialog
-from pathlib import Path
 import glob
+import os
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def getWorklist(demo=0):

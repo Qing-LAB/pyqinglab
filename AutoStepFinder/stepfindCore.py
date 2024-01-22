@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 import matplotlib.pyplot as plt
 import numpy as np
-from AutoStepFinder import stepfindTools as st
 from tqdm.auto import tqdm
 
-def stepfindcore(dataX=1, demo=0, tresH=0.15, N_iter=0):
+from AutoStepFinder import stepfindTools as st
 
+
+def stepfindcore(dataX=1, demo=0, tresH=0.15, N_iter=0):
     # run an iterative step fit deep into overfitting:
     if N_iter == 0 or N_iter > int(len(dataX) / 4):
         N_iter = int(len(dataX) / 4)

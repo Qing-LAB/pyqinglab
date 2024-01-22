@@ -1,16 +1,18 @@
+from collections import UserDict, namedtuple
+from typing import Union
+
 import h5py
 import numpy as np
-from rich.markup import escape
-from rich.tree import Tree
-from typing import Union
 from rich import print
 from rich.console import Console
-from collections import UserDict
-from collections import namedtuple
+from rich.markup import escape
+from rich.tree import Tree
 
 Datanode = namedtuple(
-    "Datanode", "fname path id type data attrs subgroup_list dataset_list unknown_data_list"
+    "Datanode",
+    "fname path id type data attrs subgroup_list dataset_list unknown_data_list",
 )
+
 
 class HDFDataset(UserDict):
     """
@@ -20,7 +22,7 @@ class HDFDataset(UserDict):
     The attributes for data is saved in the first initial read of the file so for attributes for all nodes
     """
 
-    def __init__(self, fname, mode='read_only'):
+    def __init__(self, fname, mode="read_only"):
         """
         will read from hdf5 and update a tree structure to represent how data are stored
         """
@@ -119,7 +121,7 @@ class HDFDataset(UserDict):
             else:
                 id = -1
                 raise KeyError
-            
+
             node = self.idTable[id]
             d = Datanode(
                 fname=self.fname,

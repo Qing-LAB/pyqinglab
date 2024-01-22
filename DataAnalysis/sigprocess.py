@@ -1,16 +1,17 @@
-import numpy as np
-from scipy.signal import butter, filtfilt
-import sklearn
-from sklearn import mixture
-import scipy.stats as stats
-import matplotlib as mpl
-from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-from tqdm.auto import tqdm
-from kneed import KneeLocator
-import pandas as pd
-import IPython.display as display
 from typing import Union
+
+import IPython.display as display
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy.stats as stats
+import sklearn
+from kneed import KneeLocator
+from matplotlib.figure import Figure
+from scipy.signal import butter, filtfilt
+from sklearn import mixture
+from tqdm.auto import tqdm
 
 GMModel = Union[type(mixture.GaussianMixture), type(mixture.BayesianGaussianMixture)]
 
@@ -328,17 +329,27 @@ def label_data_with_model(
 
     m = model.means_.ravel().copy()
     label_reordered_by_m_value = np.argsort(np.argsort(m))
-    #print(f"mean values: {m}")
-    #print(f"labels ordered by the m value: {label_reordered_by_m_value}")
+    # print(f"mean values: {m}")
+    # print(f"labels ordered by the m value: {label_reordered_by_m_value}")
 
     data_labelled_by_m = model.predict(data_for_predict)
-    data_labelled = np.array([label_reordered_by_m_value[unsorted_label] for unsorted_label in data_labelled_by_m])
+    data_labelled = np.array(
+        [
+            label_reordered_by_m_value[unsorted_label]
+            for unsorted_label in data_labelled_by_m
+        ]
+    )
     colors_for_labelled_data = [ctable[int(c)] for c in data_labelled]
 
     data_labelled_value = np.array([model.means_[i] for i in data_labelled_by_m])
-    
+
     legend_unsorted = np.arange(0, m.size)
-    legend = np.array([label_reordered_by_m_value[unsorted_label] for unsorted_label in legend_unsorted])
+    legend = np.array(
+        [
+            label_reordered_by_m_value[unsorted_label]
+            for unsorted_label in legend_unsorted
+        ]
+    )
     legend_color = [ctable[int(c)] for c in legend]
 
     data = {
@@ -354,7 +365,6 @@ def label_data_with_model(
         "covariances": model.covariances_.ravel(),
         "label": label_reordered_by_m_value,
     }
-
 
     df = pd.DataFrame(data)
     md = pd.DataFrame(model_result)
