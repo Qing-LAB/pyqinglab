@@ -6,7 +6,6 @@ from multiprocessing import Process
 from typing import Callable
 
 import numpy as np
-
 from pyqinglab.DataAcquisition.pyDAQBase import *
 
 

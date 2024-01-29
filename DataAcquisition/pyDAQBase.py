@@ -1,6 +1,11 @@
 # This is a prototype class to define necessary functions that all data
 # acquisition classes should have.
 
+import logging
+import logging.handlers
+import os
+import sys
+import time
 import uuid
 from enum import Enum
 from multiprocessing import Lock, Process
@@ -8,10 +13,48 @@ from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 import psutil
-import os
-import time
 
 
+def listener_configurer(logfilename: str):
+    root = logging.getLogger()
+    file_handler = logging.handlers.RotatingFileHandler(logfilename, "a", 300, 10)
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s %(processName)-10s %(name)s %(levelname)-8s %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
+    root.addHandler(console_handler)
+    root.setLevel(logging.DEBUG)
+
+
+def listener_process(queue):
+    listener_configurer()
+    while True:
+        while not queue.empty():
+            record = queue.get()
+            logger = logging.getLogger(record.name)
+            logger.handle(record)  # No level or filter logic applied - just do it!
+        sleep(1)
+
+
+def worker_configurer(queue):
+    h = logging.handlers.QueueHandler(queue)  # Just the one handler needed
+    root = logging.getLogger()
+    root.addHandler(h)
+    # send all messages, for demo; no other level or filter logic applied.
+    root.setLevel(logging.DEBUG)
+
+
+def worker_process(queue):
+    worker_configurer(queue)
+    for i in range(3):
+        sleep(random())
+        innerlogger = logging.getLogger("worker")
+        innerlogger.info(f"Logging a random number {randint(0, 10)}")
+
+# Forward declaration for class DAQTaskManager
 class DAQTaskManager:
     class TaskContext:
         pass
@@ -88,22 +131,27 @@ class DAQBaseClass:
         return None
 
     @classmethod
-    def ConfigTask(cls, task_params: dict, task_manager: DAQTaskManager) -> int:
+    def ConfigTask(cls, lock: Lock, task_manager: DAQTaskManager) -> int:
         print("Base ConfigTask called")
         return 0
 
     @classmethod
-    def InitTask(cls, task_manager: DAQTaskManager) -> int:
+    def InitTask(cls, lock: Lock, task_context: DAQTaskManager.TaskContext) -> int:
         print("Base InitTask called")
         return 0
 
     @classmethod
-    def StartTask(cls, task_manager: DAQTaskManager.TaskContext) -> int:
+    def StartTask(cls, lock: Lock, task_context: DAQTaskManager.TaskContext) -> int:
         print("Base StartTask called")
         return 0
 
     @classmethod
-    def StopTask(cls, task_manager: DAQTaskManager.TaskContext) -> int:
+    def ContinueTask(cls, lock: Lock, task_context: DAQTaskManager.TaskContext) -> int:
+        print("Continue Task")
+        return 0
+    
+    @classmethod
+    def StopTask(cls, lock: Lock, task_manager: DAQTaskManager.TaskContext) -> int:
         print("Base StopTask called")
         return 0
 
@@ -122,6 +170,13 @@ class DAQTASK_STATUS(Enum):
     RUNNING = 1
     SHUTTINGDOWN = 2
     STOPPED = 3
+    CRITICAL_ERROR = 255
+
+    def __int__(self):
+        return self.value
+
+    def __eq__(self, other):
+        return int(other) == int(self.value)
 
 
 # by default, 32kByte memory buffer is allocated for each instrument instance
@@ -294,7 +349,7 @@ class DAQTaskManager:
                 shape=(1,), dtype=np.int64, buffer=self._command_membase.buf
             )
             if master_process:
-                self._status[0] = DAQTASK_STATUS.UNINITIALIZED.value
+                self._status[0] = DAQTASK_STATUS.UNINITIALIZED
                 self._command[0] = 0
 
         def __del__(self):
@@ -411,12 +466,24 @@ class DAQTaskManager:
         if self.DAQBoard.board_init_state:
             self.DAQBoard.ShutdownBoard()
 
+    @property
+    def shared_memory_info(self) -> dict:
+        return self.context.task_info["shared_memory_info"]
+    
+    @property
+    def task_params(self) -> dict:
+        if self.context.task_info.has_key("task_params"):
+            return self.context.task_info["task_params"]
+        else:
+            return {}
+
     def config_task(self, task_params: dict) -> int:
-        self.DAQBoard.ConfigTask(task_params=task_params, task_manager=self)
         self.context.task_info["task_params"] = task_params
+        self.DAQBoard.ConfigTask(task_params=task_params, task_manager=self)
+        
 
     def init_task(self) -> int:
-        self.DAQBoard.InitTask(task_manager=self)
+        self.DAQBoard.InitTask(self.lock, self.context)
         self.daq_proc = Process(
             target=DAQTaskManager.daq_job,
             args=(self.lock, self.DAQBoard, self.context.task_info),
@@ -425,13 +492,16 @@ class DAQTaskManager:
 
     @staticmethod
     def daq_job(l: Lock, board: DAQBaseClass, info: dict):
-        p = psutil.Process(os.getpid())
-        p.nice(psutil.HIGH_PRIORITY_CLASS)
+        p = psutil.Process()
+        if sys.platform == "win32":
+            p.nice(psutil.HIGH_PRIORITY_CLASS)
+        else:
+            p.nice(-10)
 
         task_context = DAQTaskManager.TaskContext(
             lock=l, shared_mem_info=info["shared_memory_info"], master_process=False
         )
-        task_context.set_status(DAQTASK_STATUS.INITIALIZED.value)
+        task_context.set_status(DAQTASK_STATUS.INITIALIZED)
         print("child process started...", flush=True)
         print(task_context.lock, flush=True)
         while True:
@@ -439,37 +509,36 @@ class DAQTaskManager:
             match c:
                 case 1:
                     board.StartTask(task_context)
-                    task_context.set_status(DAQTASK_STATUS.RUNNING.value)
+                    task_context.set_status(DAQTASK_STATUS.RUNNING)
                     print(
-                        f"task started...command{c}, status{task_context.get_status()}",
+                        f"child proc: task started...command {c}, status {task_context.get_status()}",
                         flush=True,
                     )
                     task_context.set_command(0)
                 case -1:
                     print(
-                        f"task quitting...command{c}, status{task_context.get_status()}",
+                        f"child proc: task quitting...command {c}, status {task_context.get_status()}",
                         flush=True,
                     )
                     board.StopTask(task_context)
-                    task_context.set_status(DAQTASK_STATUS.STOPPED.value)
+                    task_context.set_status(DAQTASK_STATUS.STOPPED)
                     break
                 case 0:
-                    print(
-                        f"task continues waiting command{c}, status{task_context.get_status()}",
-                        flush=True,
-                    )
+                    pass
                 case _:
+                    task_context.set_status(DAQTASK_STATUS.CRITICAL_ERROR)
                     print(
-                        f"unknown value for command: command{c}, status{task_context.get_status()}",
+                        f"child process: got unknown value for command: command {c}, status {task_context.get_status()}",
                         flush=True,
                     )
+                    task_context.set_command(0)
 
-            time.sleep(0.01)
+            time.sleep(0)
         return 0
 
     def start_task(self) -> int:
         while True:
-            if self.context.get_status() == DAQTASK_STATUS.UNINITIALIZED.value:
+            if self.context.get_status() == DAQTASK_STATUS.UNINITIALIZED:
                 self.context.set_command(1)
                 time.sleep(0.1)
                 print(
@@ -493,16 +562,28 @@ if __name__ == "__main__":
     task.config_task({})
     task.init_task()
     task.context.set_command(1)
-    print(task.context.get_command())
+    print(f"main proc set command as {task.context.get_command()}", flush=True)
     print("main lock:", flush=True)
     print(task.lock, flush=True)
     print("main proc tries to start the task...", flush=True)
     task.start_task()
-    for i in range(10):
+    i = 0
+    while True:
+        """
         print(
             f"main proc waiting...command: {task.context.get_command()}, status: {task.context.get_status()}",
             flush=True,
         )
-        time.sleep(0.01)
-
+        """
+        if task.context.get_status() != DAQTASK_STATUS.RUNNING:
+            print(f"main proc detected that child process is no longer in running state... will quit now... {task.context.get_command()}, status: {task.context.get_status()}, i: {i}")
+            break
+        if i == 100000:
+            task.context.set_command(2)
+            print(
+                f"main proc set command to an unknown value command: {task.context.get_command()}, status: {task.context.get_status()}, i: {i}",
+                flush=True,
+            )
+        i += 1
+        time.sleep(0)
     task.stop_task()
