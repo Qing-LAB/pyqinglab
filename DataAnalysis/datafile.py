@@ -52,7 +52,7 @@ class Datafile:
         attrs_str = generate_attr_str(attrs)
 
         """
-        str_list = []
+        str_list = [f"ATTR_GENERATED_BY{eq}DATAFILE"]
         for k, v in attrs.items():
             str_list.append(f"{str(k)}{eq}{str(v)}")
         return sep.join(str_list)

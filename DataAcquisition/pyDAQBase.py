@@ -14,7 +14,6 @@ from multiprocessing.shared_memory import SharedMemory
 import numpy as np
 import psutil
 
-
 def listener_configurer(logfilename: str):
     root = logging.getLogger()
     file_handler = logging.handlers.RotatingFileHandler(logfilename, "a", 300, 10)
@@ -60,7 +59,6 @@ class DAQTaskManager:
         pass
 
     pass
-
 
 class DAQBaseClass:
     """The base class for all DAQ handlers.
