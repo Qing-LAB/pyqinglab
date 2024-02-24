@@ -159,6 +159,9 @@ class HDFDataset(UserDict):
         )
         return None
 
+    def __repr__(self):
+        return f"<HDF5Dataset file:{self.fname}>"
+
     def get_path(self, id: int) -> str:
         try:
             node = self.idTable[id]
