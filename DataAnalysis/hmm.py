@@ -73,7 +73,6 @@ def try_fit(data, num_inits=5, num_states=range(1, 10), verbose=False):
     return {"EM_models": best_models["EM"], "VI_models":best_models["VI"], "EM_scores": best_scores["EM"], "VI_scores":best_scores["VI"]}
 
 
-
 def sort_matrix(original_m, original_t):
     def switch_element(m, t, from_idx, to_idx):
         old_t = t
